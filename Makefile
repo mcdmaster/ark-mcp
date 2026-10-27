@@ -105,7 +105,8 @@ inspect-dev: ## Launch FastMCP inspector with auto-reload
 # --- Environment & maintenance --------------------------------------------
 
 check-env: ## Validate required environment variables are set
-	$(UV) run python -c "from ark_mcp.config.env import validate; validate()"
+	$(UV) run python -c "import os,importlib.util,ark_mcp.config.env;importlib.util.spec_from_file_location('validate',os.path.relpath('.env'));ark_mcp.config.env.validate();"
+
 
 clean: ## Remove build artifacts and caches
 	rm -rf dist build .ruff_cache .mypy_cache .pytest_cache .pre-commit-cache *.egg-info

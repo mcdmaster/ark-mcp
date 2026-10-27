@@ -229,7 +229,7 @@ class FilesystemArtifactStore(ArtifactStore):
     ) -> ArtifactRef:
         """Download media from a trusted provider URL and store it.
 
-        Only downloads from configured BytePlus/TOS host allowlists, plus any
+        Only downloads from ark_mcp.configured BytePlus/TOS host allowlists, plus any
         ``extra_trusted_host_suffixes`` (dot-prefixed) granted for this call.
         Validates URL, MIME, and size before storage.
         """

@@ -142,7 +142,7 @@ flowchart TD
 from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel, Field
-from ark_mcp.domain.artifacts import ArtifactRef
+from domain.artifacts import ArtifactRef
 
 
 class VariationResult(BaseModel):
@@ -466,7 +466,7 @@ async def seedream_generate_image_variations(
     seeds = generate_seeds(input.base_seed, input.variations)
     prompts = resolve_prompts(input.prompt, input.variation_prompts, input.variations)
 
-    from ark_mcp.server import get_artifact_store
+    from server import get_artifact_store
     store = get_artifact_store()
 
     images_data = [src.model_dump() for src in input.images] if input.images else None
@@ -713,7 +713,7 @@ under the same credential gates as their single-generation counterparts:
 ```python
 if settings.has_seed_audio:
     # ... existing seed_audio_generate ...
-    from ark_mcp.tools.seed_audio_generate_variations import (
+    from tools.seed_audio_generate_variations import (
         TOOL_ANNOTATIONS as audio_var_annotations,
         seed_audio_generate_variations,
     )
@@ -724,7 +724,7 @@ if settings.has_seed_audio:
 
 if settings.has_modelark:
     # ... existing seedream and seedance tools ...
-    from ark_mcp.tools.seedream_generate_image_variations import (
+    from tools.seedream_generate_image_variations import (
         TOOL_ANNOTATIONS as seedream_var_annotations,
         seedream_generate_image_variations,
     )
@@ -733,7 +733,7 @@ if settings.has_modelark:
         annotations={**seedream_var_annotations},
     )(seedream_generate_image_variations)
 
-    from ark_mcp.tools.seedance_create_task_variations import (
+    from tools.seedance_create_task_variations import (
         TOOL_ANNOTATIONS as seedance_var_annotations,
         seedance_create_task_variations,
     )

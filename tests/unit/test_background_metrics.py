@@ -12,7 +12,7 @@ from fastmcp.utilities.tasks import TaskConfig
 from fastmcp_tasks import TasksExtension, call_tool_task
 from mcp.shared.exceptions import MCPError
 
-from ark_mcp.observability import metrics
+from observability import metrics
 
 
 @pytest.fixture

@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 
 from ark_mcp.domain.errors import NormalizedProviderError, ProviderError
-from ark_mcp.domain.transcription import (
+from ark_mcp.transcription import (
     TranscriptionResult,
     TranscriptionUtterance,
     TranscriptionWord,

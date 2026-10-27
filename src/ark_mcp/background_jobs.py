@@ -15,12 +15,7 @@ from fastmcp.utilities.tasks import DEFAULT_POLL_INTERVAL_MS
 from fastmcp_tasks.creation import create_task
 from fastmcp_tasks.handlers import tasks_cancel, tasks_get
 
-from ark_mcp.domain.background_jobs import (
-    BackgroundJobAccepted,
-    BackgroundJobError,
-    BackgroundJobSnapshot,
-    BackgroundJobToolResult,
-)
+from ark_mcp.domain.background_jobs import BackgroundJobAccepted, BackgroundJobCancelled, BackgroundJobCapabilities, BackgroundJobTarget, BackgroundJobError, BackgroundJobSnapshot, BackgroundJobToolResult
 from ark_mcp.tools._catalog import CATALOG
 
 if TYPE_CHECKING:

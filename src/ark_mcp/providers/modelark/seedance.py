@@ -89,7 +89,7 @@ class SeedanceService:
         videos: list[dict[str, Any]] | None = None,
         audios: list[dict[str, Any]] | None = None,
     ) -> list[SeedanceContentItem]:
-        """Build the provider ``content[]`` array from domain-level parameters."""
+        """Build the provider ``content[]`` array from ark_mcp-level parameters."""
         content: list[SeedanceContentItem] = []
 
         if prompt:
@@ -168,7 +168,7 @@ class SeedanceService:
         draft: bool | None = None,
         output_format: str | None = None,
     ) -> SeedanceCreateProviderRequest:
-        """Build a provider request from domain-level parameters."""
+        """Build a provider request from ark_mcp-level parameters."""
         return SeedanceCreateProviderRequest(
             model=model,
             content=content,

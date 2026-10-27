@@ -12,6 +12,7 @@ generation through a small, typed, safe tool surface:
 
 from __future__ import annotations
 
+import ark_mcp.server as server
 from ark_mcp.server import create_server, mcp
 
 __all__ = ["create_server", "mcp"]

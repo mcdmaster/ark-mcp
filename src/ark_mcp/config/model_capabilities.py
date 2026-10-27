@@ -144,7 +144,7 @@ class Seed3DCapabilities:
 
 
 def _seedream_capabilities() -> dict[str, ImageCapabilities]:
-    """Build the Seedream capability registry from configured model IDs."""
+    """Build the Seedream capability registry from ark_mcp.configured model IDs."""
     settings = get_settings()
     capabilities: dict[str, ImageCapabilities] = {}
     for binding in settings.seedream_model_bindings:
@@ -182,7 +182,7 @@ def _seedream_capabilities() -> dict[str, ImageCapabilities]:
 
 
 def _seedance_capabilities() -> dict[str, VideoCapabilities]:
-    """Build the Seedance capability registry from configured model IDs."""
+    """Build the Seedance capability registry from ark_mcp.configured model IDs."""
     settings = get_settings()
     capabilities: dict[str, VideoCapabilities] = {}
     for binding in settings.seedance_model_bindings:
@@ -246,7 +246,7 @@ def _seedance_capabilities() -> dict[str, VideoCapabilities]:
 
 
 def _seed_understanding_capabilities() -> dict[str, UnderstandingCapabilities]:
-    """Build the Seed 2.1 understanding capability registry from configured model IDs."""
+    """Build the Seed 2.1 understanding capability registry from ark_mcp.configured model IDs."""
     settings = get_settings()
     capabilities: dict[str, UnderstandingCapabilities] = {}
     for binding in settings.seed_understanding_model_bindings:
@@ -273,7 +273,7 @@ def _seed_understanding_capabilities() -> dict[str, UnderstandingCapabilities]:
 
 
 def _seed3d_capabilities() -> dict[str, Seed3DCapabilities]:
-    """Build the Seed3D capability registry from configured model IDs."""
+    """Build the Seed3D capability registry from ark_mcp.configured model IDs."""
     settings = get_settings()
     capabilities: dict[str, Seed3DCapabilities] = {}
     for binding in settings.seed3d_model_bindings:

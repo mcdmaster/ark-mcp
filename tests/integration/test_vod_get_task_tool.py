@@ -33,7 +33,7 @@ from ark_mcp.providers.vod_mediakit.subtitles import (
 from ark_mcp.providers.vod_mediakit.transcode import VodMediaKitTranscodeService
 from ark_mcp.security.auth_context import AuthContext
 from ark_mcp.security.output_paths import OutputPathError
-from ark_mcp.tools import vod_get_task as vod_get_task_module
+from tools import vod_get_task as vod_get_task_module
 from ark_mcp.tools.vod_get_task import VodGetTaskInput, VodTaskOutput, vod_get_task
 from tests.fixtures.fake_context import FakeContext
 

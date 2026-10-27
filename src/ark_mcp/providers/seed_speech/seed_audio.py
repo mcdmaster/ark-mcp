@@ -87,7 +87,7 @@ class SeedAudioService:
         audio_config: dict[str, Any] | None = None,
         watermark: dict[str, Any] | None = None,
     ) -> SeedAudioProviderRequest:
-        """Build a provider request from domain-level parameters."""
+        """Build a provider request from ark_mcp-level parameters."""
         return SeedAudioProviderRequest(
             model="seed-audio-1.0",
             text_prompt=text_prompt,

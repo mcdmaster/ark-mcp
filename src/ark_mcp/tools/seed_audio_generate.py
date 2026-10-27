@@ -247,7 +247,7 @@ async def seed_audio_generate(
             "Set it in .env to enable Seed Audio tools."
         )
 
-    # Build provider references from domain input; asset:// references follow
+    # Build provider references from ark_mcp input; asset:// references follow
     # BYTEPLUS_MODELARK_ASSET_REFERENCE_MODE (rejected by default).
     audio_refs_data = await resolve_asset_references(
         ctx,

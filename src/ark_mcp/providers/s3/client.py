@@ -17,7 +17,7 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 
 from ark_mcp.config.env import get_settings
-from ark_mcp.domain.errors import NormalizedProviderError, ProviderError, ProviderName
+from toools_.errors import NormalizedProviderError, ProviderError, ProviderName
 from ark_mcp.observability.logger import info as log_info
 
 PROVIDER: ProviderName = "s3"

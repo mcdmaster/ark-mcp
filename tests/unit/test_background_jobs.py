@@ -11,8 +11,8 @@ from ark_mcp.background_jobs import (
     optional_background_tool_names,
     required_background_tool_names,
 )
-from ark_mcp.domain.background_jobs import BackgroundJobSnapshot
-from ark_mcp.tools import background_jobs as background_jobs_module
+from ark_mcp.background_jobs import BackgroundJobSnapshot
+from tools import background_jobs as background_jobs_module
 from ark_mcp.tools.background_jobs import _unavailable_message
 
 

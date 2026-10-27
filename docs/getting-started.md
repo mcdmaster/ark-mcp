@@ -83,7 +83,7 @@ Validate your environment configuration:
 ```bash
 make check-env
 # or
-uv run python -c "from ark_mcp.config.env import validate; validate()"
+uv run python -c "from config.env import validate; validate()"
 ```
 
 This checks that required environment variables are present and

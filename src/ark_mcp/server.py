@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from prometheus_client.exposition import CONTENT_TYPE_LATEST, generate_latest  # noqa: E402
+
 """FastMCP server factory and module-level deployment entrypoint.
 
 Tools are registered from the static catalog in ``tools/_catalog.py``; the
@@ -5,8 +9,6 @@ background-job contract is ``specs/SPEC_BACKGROUND_JOBS.md``. Runtime resources
 are created once by the FastMCP lifespan; importing this module only assembles
 the declarative server surface.
 """
-
-from __future__ import annotations
 
 import contextlib
 import os
@@ -23,7 +25,7 @@ truststore.inject_into_ssl()
 from fastmcp import Context, FastMCP  # noqa: E402
 from fastmcp.resources import ResourceContent, ResourceResult  # noqa: E402
 from fastmcp.utilities.tasks import TaskConfig  # noqa: E402
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # noqa: E402
+
 from starlette.middleware import Middleware  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
 

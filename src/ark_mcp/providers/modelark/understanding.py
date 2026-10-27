@@ -88,7 +88,7 @@ class SeedUnderstandingService:
         repetition_penalty: float | None = None,
         response_format: dict[str, Any] | None = None,
     ) -> ChatCompletionProviderRequest:
-        """Build a provider request from domain-level parameters.
+        """Build a provider request from ark_mcp-level parameters.
 
         - Translates image/video URL/Base64 inputs into Chat API content parts.
         - Translates audio inputs into ``input_audio`` parts: URLs as

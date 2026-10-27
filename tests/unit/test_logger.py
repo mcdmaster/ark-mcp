@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from ark_mcp.observability import logger
+from observability import logger
 
 
 def _parse_stderr(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object]]:

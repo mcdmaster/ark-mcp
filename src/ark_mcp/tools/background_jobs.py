@@ -10,13 +10,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, Field, JsonValue
 
 from ark_mcp.background_jobs import BACKGROUND_TOOL_SPECS, background_job_bridge
-from ark_mcp.domain.background_jobs import (
-    BackgroundJobAccepted,
-    BackgroundJobCancelled,
-    BackgroundJobCapabilities,
-    BackgroundJobSnapshot,
-    BackgroundJobTarget,
-)
+from ark_mcp.background_jobs import BackgroundJobAccepted, BackgroundJobCancelled, BackgroundJobCapabilities, BackgroundJobSnapshot, BackgroundJobTarget
 from ark_mcp.observability.logger import info as log_info
 from ark_mcp.observability.metrics import record_background_job_submission
 from ark_mcp.runtime import get_principal

@@ -122,7 +122,7 @@ class Seed3DService:
         command_params: dict[str, Any] | None = None,
         images: list[dict[str, Any]] | None = None,
     ) -> list[Seed3DContentItem]:
-        """Build the provider ``content[]`` array from domain-level parameters.
+        """Build the provider ``content[]`` array from ark_mcp-level parameters.
 
         The first text item carries the prompt followed by any ``--k v``
         model commands. Image items follow as ``image_url`` entries.
@@ -163,7 +163,7 @@ class Seed3DService:
         seed: int | None = None,
         callback_url: str | None = None,
     ) -> Seed3DCreateProviderRequest:
-        """Build a provider request from domain-level parameters."""
+        """Build a provider request from ark_mcp-level parameters."""
         return Seed3DCreateProviderRequest(
             model=model,
             content=content,

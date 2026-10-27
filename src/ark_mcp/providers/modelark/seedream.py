@@ -90,7 +90,7 @@ class SeedreamService:
         prompt_optimization: str | None = None,
         background: str | None = None,
     ) -> SeedreamProviderRequest:
-        """Build a provider request from domain-level parameters.
+        """Build a provider request from ark_mcp-level parameters.
 
         - Derives ``sequential_image_generation`` from ``max_images``.
         - Forces ``stream: false`` for MVP.

@@ -397,7 +397,7 @@ class TestGet:
         await runtime.ownership_store.record(
             "vision-cv", "oh-1", AuthContext(principal_id="bob", tenant_id="t", transport="http")
         )
-        from ark_mcp.tools import omnihuman_get_task as module
+        from tools import omnihuman_get_task as module
 
         monkeypatch.setattr(
             module, "get_principal", lambda _ctx: AuthContext(principal_id="eve", tenant_id="t")
@@ -469,7 +469,7 @@ class TestCancel:
 
         monkeypatch.setattr(OmniHumanService, "cancel", cancel)
         monkeypatch.setattr(OmniHumanService, "close", _close)
-        from ark_mcp.tools import omnihuman_cancel_task as module
+        from tools import omnihuman_cancel_task as module
 
         monkeypatch.setattr(
             module, "get_principal", lambda _ctx: AuthContext(principal_id="eve", tenant_id="t")

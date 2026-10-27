@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 from ark_mcp.artifacts.filesystem_store import _is_trusted_host
 from ark_mcp.config.env import get_settings
 from ark_mcp.domain.errors import ProviderError
-from ark_mcp.domain.transcription import TranscriptionResult
+from ark_mcp.transcription import TranscriptionResult
 from ark_mcp.observability.logger import info as log_info
 from ark_mcp.observability.logger import warning as log_warning
 from ark_mcp.providers.retry import call_with_retry

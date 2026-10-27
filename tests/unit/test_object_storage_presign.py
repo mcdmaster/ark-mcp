@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from ark_mcp.artifacts import object_storage_store
+from ark_mcp.domain.artifacts import object_storage_store
 from ark_mcp.artifacts.object_storage_store import ObjectStorageArtifactStore
 from ark_mcp.artifacts.store import PresignableArtifactStore
 from ark_mcp.domain.artifacts import MediaType
