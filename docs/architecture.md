@@ -18,7 +18,7 @@ Server as shipped today. For the original design rationale, see
   to a local store and re-exposed as stable `seed-media://artifacts/{id}` MCP
   resources. MediaKit persistence is best-effort.
 - **Safe by default** — local `stdio` requires no auth; remote HTTP requires
-  JWT verification, Host/Origin protection, and body limits.
+  shared-key hash verification, Host/Origin protection, and body limits.
 - **Observable and budget-aware** — structured logs, Prometheus metrics, and a
   per-principal daily budget ledger.
 - **Timeout-safe long operations** — generation, transcription, upload, and
@@ -68,6 +68,7 @@ flowchart LR
     Gateway -->|"X-Api-Key"| SeedSpeech["Seed Speech\nSeed Audio"]
     Gateway -->|"Bearer auth"| MediaKit["VOD AI MediaKit\nenhancement + transcode + subtitles + separation"]
     Gateway -->|"Bearer auth"| VisionCv["Vision AI\nOmniHuman 2.0"]
+    Gateway -->|"AK/SK V4 signing"| OpenApi["ModelArk OpenAPI\nassets + moderation lookup"]
     Server -.durable.-> Store["Artifact store\n(filesystem)"]
     Server -.state.-> Runtime["Runtime services\n(runtime.py)"]
 ```
@@ -91,6 +92,11 @@ flowchart LR
   and defaults to `https://mediakit.ap-southeast-1.bytepluses.com/api/v1`. Its
   success schemas are isolated in the adapters; the gateway accepts only known
   result shapes and rejects unknown shapes.
+- **ModelArk OpenAPI** (`providers/modelark/openapi.py`) — signed AK/SK control
+  plane for assets and opt-in `ark_moderation_get`. Moderation is account-wide
+  trusted stdio/local-mode loopback only, foreground-only, with one request,
+  no automatic retries or persistence. Shared-key HTTP excludes `moderation:read`.
+  Bounds and live-unverified status: [moderation.md](moderation.md).
 - These gateways extend `BaseHttpGateway` (`providers/base.py`), which wraps every
   outbound request in an OpenTelemetry span, records Prometheus
   provider metrics, and normalizes transport/HTTP errors into a single
@@ -126,6 +132,7 @@ Seedance, Seed 3D, and MediaKit get calls use optional task support: foreground
 execution remains available for short processing-status checks, while task
 augmentation protects the completed-output download and persistence path. List,
 presign, artifact-read, and cancel/delete operations stay foreground.
+Moderation lookup is also foreground-only and excluded from both task paths.
 
 ```mermaid
 sequenceDiagram
@@ -185,7 +192,7 @@ sequenceDiagram
     L->>R: close_runtime_services (artifact, ownership, object-key, budget, cache stores)
 ```
 
-`RuntimeServices` holds nine components (see [runtime.md](runtime.md) for
+`RuntimeServices` holds ten components (see [runtime.md](runtime.md) for
 full detail):
 
 | Field | Purpose |
@@ -197,6 +204,7 @@ full detail):
 | `object_key_ownership_store` | `SQLiteObjectKeyOwnershipStore` — uploaded-object ownership |
 | `budget_ledger` | `BudgetLedger` — per-principal UTC daily budget |
 | `provider_limiters` | `ProviderLimiters` — provider + principal concurrency |
+| `moderation_query_limiter` | `ModerationQueryLimiter` — ten lookups per rolling minute per runtime, shared across callers and ID types |
 | `task_artifact_cache` | `SQLiteTaskArtifactCache` — provider task → artifact ref cache |
 | `task_artifact_locks` | `TaskArtifactPersistenceLocks` — process-local per-task single-flight |
 
@@ -207,12 +215,17 @@ removes entries after the last holder or waiter exits, and needs no close step.
 
 ## Request flow for a billable tool
 
+The identity path is implemented by `security/http_auth.py` and
+`runtime.py::get_principal`. HTTP authentication rejects an invalid key before
+tool dispatch; generic internal bearer claims remain available for ownership
+tests, not as a configurable remote identity mechanism.
+
 ```mermaid
 flowchart TD
     A["MCP tool invoked"] --> B{"local mode?"}
     B -->|yes| C["PrincipalContext()\nlocal/local"]
-    B -->|no| D["get_access_token()\nverify sub + tenant claim"]
-    D --> C2["PrincipalContext(principal, tenant, scopes)"]
+    B -->|no| D["Read verified shared-key context: sub and fixed tenant_id"]
+    D --> C2["PrincipalContext: shared-team/shared-team, fixed ordinary scopes"]
     C --> E["reserve budget\n(BudgetLedger.reserve)"]
     C2 --> E
     E -->|"over limit"| F["BudgetExceededError\n(pre-dispatch)"]
@@ -228,15 +241,25 @@ flowchart TD
 
 Three layers of control compose on a single billable call: the provider
 bucket semaphore (per provider, global, default 5), the principal semaphore
-(per `(tenant, principal)`, default 3), and — for parallel variation tools — a
-per-batch local semaphore (`max_concurrent=5`). See [runtime.md](runtime.md).
+(per `(tenant, principal)`, default 3; skipped in local mode), and — for parallel
+variation tools — a per-batch local semaphore (`max_concurrent=5`). All
+shared-key members share that principal semaphore and budget. See [runtime.md](runtime.md).
+Moderation uses the `modelark-openapi` concurrency bucket followed by its
+dedicated rolling-minute limiter, not the billable-generation budget flow.
+Its quota is in-memory, not shared across replicas or other account clients;
+lookup pricing is unspecified.
 
 ## Transports
 
 | Transport | When | Auth |
 |---|---|---|
 | `stdio` | local default | none (single trusted principal `local`) |
-| Streamable HTTP | remote / shared | JWT verification required for non-loopback hosts |
+| Streamable HTTP | remote / shared | `api_key` required off loopback; one fixed `shared-team` identity with ordinary scopes |
+
+`local` is the Python default and is restricted to stdio/loopback HTTP.
+Docker, Compose and Terraform default to `api_key`. Shared HTTP excludes
+account-wide asset and moderation administration; it does not isolate members
+of a team.
 
 `truststore.inject_into_ssl()` runs at module import in both `server.py` and
 `__main__.py`, so every run path loads the macOS system Keychain for TLS.

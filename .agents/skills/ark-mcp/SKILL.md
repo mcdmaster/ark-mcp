@@ -1,6 +1,6 @@
 ---
 name: ark-mcp
-description: Use the BytePlus Ark Seed multimodal MCP server to generate images (Seedream), audio (Seed Audio), video (Seedance 2.0, 2.5, 2.5 Premium), 3D (Hyper3D, Hitem3d) and OmniHuman avatar video; run VOD MediaKit enhance, transcode, subtitle and audio separation; understand images, video and audio; transcribe speech; manage the asset library. Flow - ark_list_models for exact model IDs and limits, then one create tool per product through ark_job_submit (variations, dry_run), then gen_task_get, vod_get_task or omnihuman_get_task to poll, then seed_media_* for artifacts.
+description: Use the BytePlus Ark Seed multimodal MCP server to generate images (Seedream), audio (Seed Audio), video (Seedance 2.0, regular 2.5 with 4K, and 2.5 Flash at 480p/720p), 3D (Hyper3D, Hitem3d) and OmniHuman avatar video; run VOD MediaKit enhance, transcode, subtitle and audio separation; understand images, video and audio; transcribe speech; manage the asset library; look up existing moderation block reasons through trusted local foreground calls. Flow - ark_list_models for exact model IDs and limits, then one create tool per product through ark_job_submit (variations, dry_run), then gen_task_get, vod_get_task or omnihuman_get_task to poll, then seed_media_* for artifacts.
 ---
 
 # Ark Seed Multimodal MCP Server
@@ -11,9 +11,15 @@ skill covers only what the schemas cannot tell you: the flow, the rules that
 span tools, and where to look things up. **Parameters live in the tool
 schemas** (full reference: [API reference](https://byteplus-sa.github.io/ark-mcp/api-reference/)).
 
+Hosted HTTP accepts only one shared MCP API key. Every member uses tenant and
+principal `shared-team`, sharing data, budgets and fixed ordinary scopes.
+Account-wide asset and moderation administration is excluded; use trusted local
+stdio for administration. Provider keys stay on the server. Setup and rotation:
+[environment.md](references/environment.md#transport-and-auth).
+
 | Product | Create tool | Poll / result | Enabled by |
 |---|---|---|---|
-| **Seedance** video (2.0, 2.5, 2.5 Premium) | `seedance_create_task` | `gen_task_get`, `gen_task_list`, `gen_task_cancel_or_delete` | `BYTEPLUS_MODELARK_API_KEY` (Premium model also needs `BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=true`) |
+| **Seedance** video (2.0, regular 2.5 with 4K, and 2.5 Flash) | `seedance_create_task` | `gen_task_get`, `gen_task_list`, `gen_task_cancel_or_delete` | `BYTEPLUS_MODELARK_API_KEY` |
 | **Seedream** images (generate and edit) | `seedream_generate_image` | artifacts in the result | `BYTEPLUS_MODELARK_API_KEY` |
 | **Seed Audio** | `seed_audio_generate` | artifact in the result | `BYTEPLUS_SEED_SPEECH_API_KEY` |
 | **Seed 3D** (Hyper3D, Hitem3d) | `hyper3d_create_task`, `hitem3d_create_task` | `gen_task_get`, `gen_task_list`, `gen_task_cancel_or_delete` | `BYTEPLUS_MODELARK_3D_ENABLED=true` + ModelArk key |
@@ -23,11 +29,15 @@ schemas** (full reference: [API reference](https://byteplus-sa.github.io/ark-mcp
 | **Speech-to-text** | `speech_to_text` | transcript in the result | `BYTEPLUS_SEED_SPEECH_API_KEY` |
 | **Object storage** | `media_upload`, `media_presign` | URLs in the result | TOS or S3 credentials |
 | **Asset library** (`asset://`) | eight `ark_asset_*` tools | — | `BYTEPLUS_MODELARK_ACCESS_KEY` + `_SECRET_KEY` |
+| **Moderation lookup** | `ark_moderation_get` (foreground-only, local-only) | `block_reasons` in the result | `BYTEPLUS_MODELARK_MODERATION_ENABLED=true` + AK/SK |
 | **Always registered** | `ark_list_models`, `ark_job_*`, `seed_media_*` | — | — |
 
 **Do not assume a tool exists.** A tool registers only when its gate passes;
 `ark_list_models.services` and the `seed-health://status` resource show what is
 on and which setting enables the rest.
+The catalog contains 39 tools, not a fixed visible count. The `moderation`
+service reports configuration only, not whitelist activation, coverage or
+shared-key permission.
 
 ## How to use this server
 
@@ -68,6 +78,8 @@ flowchart LR
   long): `gen_task_get`, `vod_get_task`, `omnihuman_get_task`,
   `seed_media_persist_url`, `ark_asset_create`, `ark_asset_verification_result`.
   Everything else is foreground.
+- **Moderation is foreground-only:** `ark_moderation_get` is excluded from
+  `ark_job_submit` and native task augmentation, even when enabled.
 - **Submit** with `ark_job_submit` and `{"input": {"tool_name": "<tool>",
   "arguments": {"input": {...tool input...}}}}`, then poll `ark_job_get` no
   faster than `poll_after_ms` and read the tool result from `result`
@@ -88,20 +100,29 @@ flowchart LR
 - Per-model limits (resolutions, durations, reference counts, Draft support,
   formats) are checked at runtime. **All violations come back in one error**
   that points to `ark_list_models`; fix them all, or use `dry_run`.
-- `SEEDANCE_DEFAULT_MODEL` is Seedance 2.5. **Premium is a model ID**, present
-  only when its flag is on; there are no Premium tools.
+- `SEEDANCE_DEFAULT_MODEL` is Seedance 2.5. **4K is a resolution**:
+  use `resolution="4k"` on the same model, with no separate binding or flag.
+  This is retained server acceptance; current model-specific provider docs
+  omit regular 2.5 4K. Confirm provider support before paid use.
+- **Flash** uses `model="dreamina-seedance-2-5-flash-261115"` on the same tool,
+  with 480p/720p and no Draft. Empty bindings include it automatically;
+  explicit binding lists must add it themselves. Discovery does not prove
+  account activation; custom Flash endpoints use family `seedance_2_5_flash`.
 - `variations`: Seedance 1-5 (separate billed tasks, `tasks[]`), Seedream 1-10
   (`summary`), Seed Audio 1-5 (`summary`). Failures are per variation. Seedream
   `seed` is the base seed (`N, N+1, ...`); `max_images` and `variations > 1`
   are mutually exclusive.
 - `dry_run` returns `preview` (request bodies, cost estimate) and bills nothing.
+  Video estimates are static and do not account for resolution or duration.
+  Flash currently reuses the static 2.5 per-task fallback, not its token price.
 
 ### Seedance
 
-- **Draft (2.5 models only):** `draft=true` makes a cheap 480p preview; once it
-  has `succeeded` (at most 7 days old), call again with only `draft_task_id`
+- **Draft (regular 2.5 only, not Flash):** `draft=true` makes a cheap 480p preview; once it
+  has `succeeded` (within 14 days of creation, or 7 if created before
+  2026-10-28 10:00 UTC+8), call again with only `draft_task_id`
   (plus `return_last_frame`, `watermark`, `output_format` and similar) to render
-  the final video. The Draft's model, prompt, media, duration and ratio are
+  the final video at 1080p, not 4K. The Draft's model, prompt, media, duration and ratio are
   reused and must be omitted; `variations` must be 1.
 - Video references must be public HTTPS URLs (or `asset://`); use
   `media_upload` for local files.
@@ -109,12 +130,40 @@ flowchart LR
 
 ### Seedream
 
+- Default: Seedream 5.5 (`dola-seedream-5-5-261028`; requires
+  account authorization). Explicit operator defaults remain unchanged.
 - `images` plus optional `point` or `bbox` (0-999, on the first image) edits;
   without images it is text-to-image.
-- `background="transparent"` needs Seedream 5.0 Pro, **exactly one PNG input
-  that already has transparent pixels**, and `output_format` omitted or `png`.
-  It edits that image and keeps the transparency; it does not cut a subject out
-  of an opaque image.
+- `background="transparent"` on 5.5 accepts text-only prompts or references
+  without existing alpha. On 5.0 Pro it requires **exactly one PNG input that
+  already has transparent pixels** and preserves that transparency.
+  Both require `output_format` omitted or `png`. 5.5 defaults to PNG.
+- Use `variations`, not provider batches, on 5.5 and 5.0 Pro.
+- Seedream 5.5 does not document the retained `seed` compatibility field;
+  omit it unless provider acceptance is verified.
+- 5.5 sizes: `1K`, `1.5K`, `2K` (default), or positive `WIDTHxHEIGHT` with
+  921600-4624220 pixels and width/height ratio 1/16-16, inclusive. No `auto` size.
+- 5.5 `prompt_optimization` accepts `standard` only (provider default);
+  `background` defaults to `auto` (JPEG always opaque). Pro's operator
+  optimization setting never applies to 5.5.
+- `safety_identifier` on 5.5/Pro must be a stable hashed user ID, 1-64 non-space
+  printable ASCII characters; previews and logs redact it.
+- `response_format="b64_json"` requires `persist=true`, including dry runs.
+  Missing output is an explicit error, not an artifact-less success.
+- Read `generations` for per-call request ID, submitted seed, exact final-prompt
+  SHA-256 and allowlisted options; provider background/size/format/usage and
+  identifier echo stay separate from local byte `images[].inspection`.
+  Inspection is advisory, preserves billed artifacts and never rerolls.
+  URL-only inspection and absent provider metadata stay null.
+- Delivery is not visual acceptance. Use the bounded
+  [generate/review/edit workflow](references/workflows.md#seedream-generate-review-edit)
+  for text, absence, counts and geometry. Reviewer refusal is `Not evaluated`,
+  not generation failure. Layer-decomposition/OCR inputs are rejected.
+- Published tool pages list supported models in one table per capability,
+  including defaults, configuration gates and key limits. See the
+  [Seedream tool reference](https://byteplus-sa.github.io/ark-mcp/tool-reference/seedream-generate-image/#supported-models)
+  for the image model table and shared editing guidance; discovery remains
+  authoritative for your connection.
 
 ### Polling and persistence
 
@@ -149,6 +198,9 @@ flowchart LR
   (`MEDIA_UPLOAD_BATCH_MAX_BYTES`) fails the whole call. Use a long
   `expires_in_seconds` (e.g. 3600) for URLs that `vod_*` tools fetch later.
 - An uploaded `object_key` also works as an `ark_asset_create` source.
+- **Asset library management is unavailable over shared-key HTTP.** Use a
+  trusted local setup with AK/SK for the management workflow below. Existing
+  authorized `asset://` references can still be used for Seedance generation.
 - **Asset library:** `asset://<id>` is accepted natively by Seedance only, and
   **only `Active` assets work** (check `all_active` / `status`). Create AIGC
   groups with `ark_asset_group_ensure` by subject name (never invent group
@@ -161,6 +213,17 @@ flowchart LR
   a non-empty group is refused unless `cascade=true` (that deletes its assets;
   confirm with the user first). The `group_created_empty` cleanup hint on
   `ark_asset_create` only works when delete is enabled.
+
+### Moderation lookup
+
+With trusted stdio/local-mode loopback and the default-off flag + complete
+AK/SK, call `ark_moderation_get` directly using a bare provider ID and explicit
+`task_id`, `asset_id` or `request_id`, not an Ark job ID or `asset://`.
+This is account-wide access; `moderation:read` is never a shared HTTP scope.
+Ten lookups per rolling minute per runtime, no automatic retries or result
+persistence. Empty/not-found never establishes safety. Live success remains
+unverified. Read [lookup bounds](references/understanding-media-assets.md#moderation-lookup-ark_moderation_get)
+and [Moderation Lookup](https://byteplus-sa.github.io/ark-mcp/moderation/).
 
 ## Examples
 
@@ -199,7 +262,7 @@ each returned `asset_uri` as `images: ["asset://asset-..."]` to
 | `queued` / `running` for a long time | Normal provider queue | Keep polling `gen_task_get`; `queue.hint` explains the wait |
 | `persistence_error` on an artifact | Output billed, storage failed | `seed_media_persist_url` before the URL expires |
 | Variation `error.phase` | `queued` (`QUEUE_TIMEOUT`): safe to retry; `generating`: may have completed; `persisting`: output not stored | Retry only `queued` ones |
-| `NOT_OWNED` | The caller did not create that task or key | Use the original principal |
+| `NOT_OWNED` | The task or key is not owned by this server identity | Check the endpoint and retained ownership records; shared-key rotation keeps ownership, but old user/local data is not automatically transferred |
 | OmniHuman failed `InvalidParameter ... audio` or error `50510` | Provider rejected the audio or content after submission | Fix the inputs; never retry unchanged |
 | Budget rejected | `DAILY_BUDGET_USD` exceeded | Wait for the UTC day rollover or raise it |
 
@@ -209,7 +272,7 @@ Read these only when you need the detail:
 
 - [tool-reference.md](references/tool-reference.md): per-product notes for Seedance, Seedream, Seed Audio, 3D, OmniHuman and VOD.
 - [polling-and-artifacts.md](references/polling-and-artifacts.md): pollers, cancel/delete, artifact tools, local paths, persistence fallbacks.
-- [understanding-media-assets.md](references/understanding-media-assets.md): understanding, speech-to-text, object storage, asset library.
+- [understanding-media-assets.md](references/understanding-media-assets.md): understanding, speech-to-text, object storage, asset library and local moderation lookup.
 - [models-and-limits.md](references/models-and-limits.md): per-family limits and model selection.
 - [workflows.md](references/workflows.md): background jobs in depth, production workflows, retry policy, common issues.
 - [environment.md](references/environment.md): credentials, flags, transport, auth, architecture.

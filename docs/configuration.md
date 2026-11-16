@@ -29,19 +29,17 @@ client is missing tools and that warning is absent, look at
 | `BYTEPLUS_MODELARK_BASE_URL` | AP Southeast ModelArk URL | HTTPS data-plane base URL |
 | `BYTEPLUS_SEED_AUDIO_BASE_URL` | AP Southeast Seed Speech URL | HTTPS service base URL |
 | `BYTEPLUS_VOD_MEDIAKIT_BASE_URL` | `https://mediakit.ap-southeast-1.bytepluses.com/api/v1` | HTTPS VOD AI MediaKit convenience-endpoint base URL |
-| `SEEDREAM_DEFAULT_MODEL` | `dola-seedream-5-0-pro-260628` | Default image model/endpoint ID |
+| `SEEDREAM_DEFAULT_MODEL` | `dola-seedream-5-5-261028` | Default image model/endpoint ID (Seedream 5.5; account authorization required) |
 | `SEEDREAM_PROMPT_OPTIMIZATION_MODE` | `standard` | Mode 5.0 Pro sends when a caller omits `prompt_optimization`: `standard` (prompt-following quality) or `fast` (lower latency). Both are provider-accepted; an explicit per-call value wins |
 | `SEEDANCE_DEFAULT_MODEL` | `dreamina-seedance-2-5-260628` | Default video model/endpoint ID used by `seedance_create_task` when `model` is omitted (Seedance 2.5; was 2.0 before the tool consolidation, see the [upgrade note](#seedance-default-model-upgrade-note)) |
 | `SEED_UNDERSTANDING_DEFAULT_MODEL` | `dola-seed-2-1-turbo-260628` | Default understanding model/endpoint ID. Set to `dola-seed-evolving` to use the latest Pro-tier model (auto-resolves to family `pro`, no `SEED_UNDERSTANDING_MODEL_FAMILY` needed) |
-| `SEEDREAM_MODEL_FAMILY` | empty | Family for a custom default: `pro`, `lite`, or `4x` |
-| `SEEDANCE_MODEL_FAMILY` | empty | Family for a custom default: `standard`, `fast`, `mini`, `seedance_2_5`, or `seedance_2_5_premium` |
+| `SEEDREAM_MODEL_FAMILY` | empty | Family for a custom default: `seedream_5_5`, `pro`, `lite`, or `4x` |
+| `SEEDANCE_MODEL_FAMILY` | empty | Family for a custom default: `standard`, `fast`, `mini`, `seedance_2_5` (through 4K), or `seedance_2_5_flash` (480p/720p, no Draft) |
 | `SEED_UNDERSTANDING_MODEL_FAMILY` | empty | Family for a custom default: `pro` or `turbo` |
 | `SEEDREAM_MODEL_BINDINGS` | empty | JSON list of `{model_id, family}` bindings |
 | `SEEDANCE_MODEL_BINDINGS` | empty | JSON list of `{model_id, family}` bindings |
 | `SEED_UNDERSTANDING_MODEL_BINDINGS` | empty | JSON list of `{model_id, family}` bindings |
 | `SEED_AUDIO_UNDERSTANDING_MODEL` | `seed-2-0-lite-260428` | Model/endpoint ID used by `seed_audio_understand`. Any ModelArk model that accepts Chat Completions `input_audio` parts with deep thinking works; change it when a newer audio-capable model ships |
-| `BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED` | `false` | Feature flag for whitelist-only Seedance 2.5 Premium (4K). Binds the Premium model ID so `seedance_create_task` accepts it as `model`; reuses the ModelArk key. When false, `seedance_2_5_premium` bindings are rejected at startup |
-| `SEEDANCE_2_5_PREMIUM_MODEL` | `dreamina-seedance-2-5-premium-260915` | Premium model/endpoint ID bound automatically when the flag is on and `SEEDANCE_MODEL_BINDINGS` has no `seedance_2_5_premium` binding |
 | `BYTEPLUS_MODELARK_3D_ENABLED` | `false` | Feature flag for 3D generation (Hyper3D + Hitem3d); reuses the ModelArk key, disabled by default |
 | `HYPER3D_DEFAULT_MODEL` | `hyper3d-gen2` | Default Hyper3D model/endpoint ID |
 | `HITEM3D_DEFAULT_MODEL` | `hitem3d-2-0` | Default Hitem3d model/endpoint ID |
@@ -50,7 +48,7 @@ client is missing tools and that warning is absent, look at
 | `BYTEPLUS_CV_BASE_URL` | `https://openapi.cv.bytepluses.com` | HTTPS Vision AI base URL |
 | `BYTEPLUS_OMNIHUMAN_REQ_KEY` | `realman_avatar_picture_omni20_cv` | Service identifier sent as `req_key`; change only if BytePlus issues a new one |
 
-The two built-in default IDs have known families. A custom ID must be bound
+The recognized built-in IDs have known families. A custom ID must be bound
 explicitly; the server does not infer capabilities from substrings in an ID.
 For example:
 
@@ -58,6 +56,43 @@ For example:
 SEEDREAM_DEFAULT_MODEL=my-image-endpoint
 SEEDREAM_MODEL_BINDINGS=[{"model_id":"my-image-endpoint","family":"pro"}]
 ```
+
+### Seedream default model upgrade note
+
+The default is now **Seedream 5.5 (`dola-seedream-5-5-261028`)**.
+This changes only deployments that omit `SEEDREAM_DEFAULT_MODEL`; existing
+explicit defaults stay unchanged. Discovery reflects configured models, not
+provider authorization. Accounts without 5.5 access should retain 5.0 Pro:
+
+```dotenv
+SEEDREAM_DEFAULT_MODEL=dola-seedream-5-0-pro-260628
+```
+
+Both built-in IDs resolve without a family setting. For a custom 5.5 endpoint,
+set `SEEDREAM_MODEL_FAMILY=seedream_5_5`. If `SEEDREAM_MODEL_BINDINGS` contains
+only older models and no explicit default, startup fails until the default is
+set to a bound ID or a 5.5 binding is added. To offer both:
+
+```dotenv
+SEEDREAM_DEFAULT_MODEL=dola-seedream-5-5-261028
+SEEDREAM_MODEL_BINDINGS=[{"model_id":"dola-seedream-5-5-261028","family":"seedream_5_5"},{"model_id":"dola-seedream-5-0-pro-260628","family":"pro"}]
+```
+
+5.5 uses PNG output when omitted and accepts transparent text-to-image.
+`SEEDREAM_PROMPT_OPTIMIZATION_MODE` remains specific to 5.0 Pro; explicit
+`prompt_optimization="standard"` is accepted on 5.5, while `fast` is rejected
+even when the Pro-only operator setting is `fast`. Omitted 5.5 optimization
+uses the provider's standard default. Background defaults to `auto` on 5.5.
+See [image model limits](models.md#image-capabilities-imagecapabilities).
+
+Read `seed-health://status` to confirm the effective Seedream default model and
+binding family. The resource also reports whether background-job local exports
+have an absolute `OUTPUT_ROOTS` entry (comma-separated paths). It never reveals
+root paths or credentials. These are configuration diagnostics only: they do not
+probe provider authorization, check filesystem readiness, or replace the
+request's destination preflight. Client MCP roots are unavailable inside jobs.
+Seedream dry-run `preview.price_source` distinguishes a cached account image
+rate (`catalog`) from the built-in fallback (`builtin`); neither is actual billing.
 
 ### Seedance default model upgrade note
 
@@ -68,8 +103,8 @@ must be one of the bound IDs.
 
 | Your configuration | Result after upgrading |
 |---|---|
-| No `SEEDANCE_MODEL_BINDINGS`, no `SEEDANCE_DEFAULT_MODEL` | Seedance 2.5 is bound automatically and is the default |
-| `SEEDANCE_DEFAULT_MODEL` set explicitly | Unchanged |
+| No `SEEDANCE_MODEL_BINDINGS`, no `SEEDANCE_DEFAULT_MODEL` | Regular Seedance 2.5 and Flash are bound automatically; regular 2.5 is the default |
+| `SEEDANCE_DEFAULT_MODEL` set explicitly, bindings empty | The selected model remains the default; Flash is also bound unless it is the selected default |
 | `SEEDANCE_MODEL_BINDINGS` lists only a Seedance 2.0 model and `SEEDANCE_DEFAULT_MODEL` is unset | **Startup fails** with `Seedance default model 'dreamina-seedance-2-5-260628' is missing from its bindings. Set the default model env var to one of the bound IDs: [...]` |
 
 **Fix** for the failing case: set `SEEDANCE_DEFAULT_MODEL` to the bound 2.0 ID
@@ -86,6 +121,44 @@ SEEDANCE_MODEL_BINDINGS=[{"model_id":"dreamina-seedance-2-0-260128","family":"st
 
 Callers then choose a model per request with `model`, taking an exact ID from
 `ark_list_models(kind='video')`.
+
+### Seedance 2.5 4K
+
+All resolutions use `dreamina-seedance-2-5-260628` and family `seedance_2_5`.
+Select `resolution="4k"` on `seedance_create_task`; no extra feature flag,
+model binding, or tool is needed.
+
+The separate Premium model, family, service entry, and configuration settings
+have been removed without a compatibility layer. Remove
+`BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED` and `SEEDANCE_2_5_PREMIUM_MODEL`
+from configuration and replace any `seedance_2_5_premium` binding with the
+current 2.5 model and family. There is no automatic alias or rerouting of old
+model IDs.
+
+Draft previews remain 480p and Draft-to-final rendering remains 1080p;
+4K currently applies to ordinary generation, not Draft promotion. Static
+video cost previews do not account for resolution or duration.
+
+### Seedance 2.5 Flash
+
+Flash uses `dreamina-seedance-2-5-flash-261115`, family `seedance_2_5_flash`,
+through the same `seedance_create_task` tool, ModelArk key, host, and task
+lifecycle. It supports 480p/720p, 4-30 seconds, 10 image / 5 video / 5 audio
+references, audio-only input, reference/edit/extend task types, and MP4/MOV.
+It does not support 1080p, 4K, `draft`, or `draft_task_id`.
+
+With empty bindings, Flash is added alongside the selected default. Regular
+2.5 remains the default for omitted `model`. A non-empty
+`SEEDANCE_MODEL_BINDINGS` remains authoritative; add Flash explicitly there:
+
+```dotenv
+SEEDANCE_MODEL_BINDINGS=[{"model_id":"dreamina-seedance-2-5-260628","family":"seedance_2_5"},{"model_id":"dreamina-seedance-2-5-flash-261115","family":"seedance_2_5_flash"}]
+```
+
+To use a custom Flash endpoint, bind its ID to `seedance_2_5_flash`. Listing
+the model does not prove provider activation or account entitlement. No new
+feature flag is required. Flash cost previews currently reuse the static
+2.5 per-task fallback, not its token-based provider price.
 
 Credentials are startup-only. If a provider key is absent, its tools are not
 registered. Specifically, `vod_enhance_video` is registered independently
@@ -108,29 +181,28 @@ not contain embedded credentials.
 | `RATE_LIMIT_RPM` | `0` | Max HTTP requests per minute per client IP; 0 disables |
 | `RATE_LIMIT_BURST` | `0` | Token bucket burst size; 0 defaults to `RATE_LIMIT_RPM` |
 | `RATE_LIMIT_TRUST_PROXY_HEADERS` | `false` | Trust the first `X-Forwarded-For` entry for rate-limit keys; enable only behind a trusted proxy |
-| `MCP_AUTH_MODE` | `local` | `local` or `jwt` |
-| `MCP_JWT_JWKS_URI` | empty | HTTPS JWKS endpoint for JWT verification |
-| `MCP_JWT_ISSUER` | empty | Required token issuer |
-| `MCP_JWT_AUDIENCE` | empty | Required token audience |
-| `MCP_TENANT_CLAIM` | `tenant_id` | Claim used for tenant isolation |
-| `MCP_JWT_CLOCK_SKEW_SECONDS` | `30` | Tolerated clock skew (seconds) for JWT `nbf` (not-before) validation |
-| `MCP_JWT_PROVIDE_DISCOVERY` | `false` | When true in JWT mode, serve RFC 9728 OAuth Protected Resource Metadata so MCP clients can discover the authorization server |
-| `MCP_PUBLIC_BASE_URL` | empty | Public HTTPS base URL of this server; required when `MCP_JWT_PROVIDE_DISCOVERY=true` |
-| `MCP_JWT_SCOPES_SUPPORTED` | empty | Comma-separated scopes advertised in Protected Resource Metadata |
+| `MCP_AUTH_MODE` | `local` | `local` or `api_key`; Docker, Compose and Terraform default to `api_key` |
+| `MCP_API_KEY_SHA256` | empty | Required for `api_key`: lowercase SHA-256 hex digest of the shared MCP key, never the raw key |
 
 `FASTMCP_TRANSPORT`, `FASTMCP_HOST`, and `FASTMCP_PORT` are accepted as
 aliases for the corresponding `MCP_*` transport settings.
 
 `local` auth is accepted only for stdio or loopback HTTP. Binding HTTP to a
-non-loopback address fails closed unless JWT mode and all verifier settings are
-present. JWT tokens must contain a principal (`sub`) and the configured tenant
-claim. Tool scopes are enforced by FastMCP:
+non-loopback address fails closed unless `api_key` mode and a valid digest
+are configured. API key mode assigns one `shared-team` tenant/principal
+with ordinary tool permissions, a shared budget and shared data access, excluding
+account-wide admin scopes. See [shared-key setup and rotation](self-hosting.md#shared-mcp-key).
+The internal tenant claim key is fixed to `tenant_id`, not an operator setting.
+FastMCP enforces the fixed ordinary scope allowlist:
 
 - `seed:audio:generate`
 - `seedream:generate`
 - `seedance:create`
 - `gen:read`, `gen:delete` (`gen_task_*` tools for Seedance and 3D tasks)
+- `seed:asr:transcribe`
 - `understanding:read`
+- `hyper3d:create`, `hitem3d:create`
+- `omnihuman:create`, `omnihuman:read`, `omnihuman:cancel`
 - `vod:enhance`
 - `vod:transcode`
 - `vod:subtitle:add`
@@ -140,6 +212,12 @@ claim. Tool scopes are enforced by FastMCP:
 - `media:upload`
 - `media:presign`
 - `artifacts:read`
+
+**Breaking change:** `jwt` mode is rejected. Retired `MCP_JWT_*`,
+`MCP_TENANT_CLAIM` and `MCP_PUBLIC_BASE_URL` settings are not used.
+There is no automatic ownership transfer. Preserve SQLite, Redis, artifacts
+and the snapshot encryption key; follow
+[the migration procedure](self-hosting.md#breaking-change-migration).
 
 ## Seed Speech ASR (STT)
 
@@ -158,7 +236,7 @@ URL, Base64, or a local file path (stdio only).
 | `SEED_SPEECH_ASR_POLL_INTERVAL_SECONDS` | `3.0` | Seconds between ASR query polls |
 | `SEED_SPEECH_ASR_POLL_MAX_SECONDS` | `600.0` | Maximum total seconds to wait for ASR result |
 
-JWT tool scope for speech-to-text:
+Fixed team scope for speech-to-text:
 
 - `seed:asr:transcribe`
 
@@ -232,7 +310,29 @@ only the API key. See [assets.md](assets.md).
 | `BYTEPLUS_MODELARK_ASSET_REFERENCE_MODE` | `off` | Seedream / Seed Audio `asset://` handling: `off` rejects, `resolve` swaps in the temporary asset URL (experimental; needs AK/SK) |
 | `SEEDANCE_ASSET_PREFLIGHT` | `true` | With AK/SK, check `asset://` references with `GetAsset` before a billed Seedance submit |
 
-JWT tool scopes: `assets:read`, `assets:write`, `assets:verify`, `assets:delete`.
+Account-wide asset scopes (`assets:read`, `assets:write`, `assets:verify`,
+`assets:delete`) are excluded from shared-key HTTP. Use trusted local stdio
+for asset administration; configuring AK/SK does not grant remote access.
+
+## Moderation lookup (AK/SK, opt-in)
+
+| Variable | Default | Description |
+|---|---|---|
+| `BYTEPLUS_MODELARK_MODERATION_ENABLED` | `false` | Registers foreground-only `ark_moderation_get` when complete ModelArk AK/SK is configured |
+
+Reuses the OpenAPI host, signing region and AK/SK above; temporary credentials
+also need `BYTEPLUS_MODELARK_SESSION_TOKEN`. A ModelArk Bearer key is not required.
+The account needs Advanced Creation Rights, whitelist activation and IAM
+`GetModerationResult`. Discovery's `moderation` service and health's
+`Moderation lookup configured` report configuration only, not entitlement.
+
+This is account-wide trusted stdio/local-mode loopback access, not tenant-scoped
+access. `moderation:read` is not granted to shared-key HTTP, even with the flag
+enabled. AK/SK also register asset tools and enable the pricing refresher;
+for isolated lookup set `BYTEPLUS_MODELARK_PRICING_REFRESH_SECONDS=0`, without
+broadening a moderation-only IAM policy. The fixed ten-lookups-per-rolling-minute
+guard is independent of HTTP rate limits; live success remains unverified.
+See [moderation.md](moderation.md) for eligibility, validation and quota bounds.
 
 ## Object storage (TOS or S3, optional)
 
@@ -285,16 +385,24 @@ S3-compatible storage.
 | `ARTIFACT_DIR` | `~/.ark-mcp/artifacts` | Media, metadata, ownership, and budget state |
 | `ARTIFACT_TTL_SECONDS` | `604800` | Artifact retention, in seconds |
 | `ARTIFACT_SWEEP_INTERVAL_SECONDS` | `3600` | Interval between background artifact/state expiry sweeps |
-| `STATE_PRUNE_MAX_AGE_DAYS` | `30` | Max age for ownership/budget/cache rows before pruning |
+| `STATE_PRUNE_MAX_AGE_DAYS` | `30` | Max age for ownership/budget/cache rows before pruning; at least 14 for authenticated HTTP with regular Seedance 2.5 enabled |
 | `MCP_INLINE_MEDIA_MAX_BYTES` | `8388608` | Maximum inline MCP media size |
 | `ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS` | `120` | Timeout for each attempt to download provider output into artifact storage (filesystem and object-storage backends) |
 | `ARTIFACT_DOWNLOAD_MAX_ATTEMPTS` | `3` | Attempts (1-10) for a retryable output download (timeouts, network errors, 408/429/5xx), with 1s, 2s, 4s, ... backoff. Expired, untrusted, or oversized sources are never retried |
 | `ARTIFACT_INLINE_FALLBACK_MAX_BYTES` | `8388608` (8 MiB) | When inline Base64 output (Seed Audio, Seedream `b64_json`) cannot be stored, return it inline in `ArtifactRef.fallback_data` up to this decoded size; `0` disables |
 | `PROVIDER_MAX_CONCURRENCY` | `5` | Process-wide slots per provider |
-| `PRINCIPAL_MAX_CONCURRENCY` | `3` | Shared slots per authenticated principal |
-| `DAILY_BUDGET_USD` | `0` | Per-principal UTC daily estimate limit; zero records only |
+| `PRINCIPAL_MAX_CONCURRENCY` | `3` | Shared slots across the whole team on authenticated HTTP; skipped in local mode |
+| `DAILY_BUDGET_USD` | `0` | Per-principal UTC daily estimate limit, team-wide on shared-key HTTP; zero records only |
 | `PERSISTENCE_CACHE_MAX_SIZE` | `10000` | Max cached provider task IDs in artifact-resolution cache |
 | `PERSISTENCE_CACHE_TTL_SECONDS` | `86400` | TTL for cached task-to-artifact mappings (seconds) |
+
+Authenticated HTTP servers with ModelArk credentials and any regular
+`seedance_2_5` binding (including custom or non-default models) require
+`STATE_PRUNE_MAX_AGE_DAYS >= 14` to retain Draft ownership throughout the
+promotion window. Shorter values fail at startup; increase existing overrides
+or keep the 30-day default. Flash-only, legacy-only, local, and disabled
+ModelArk configurations retain the one-day minimum. Increasing retention does
+not recover already-pruned ownership rows; missing ownership remains denied.
 
 A billed output is never dropped because storage failed; see
 [Artifacts](artifacts.md#persistence-failures).
@@ -325,7 +433,7 @@ jobs should write files.** Path writing is stdio-only. See
 | `BYTEPLUS_REQUEST_TIMEOUT_MS` | `600000` | Full provider request timeout |
 | `SEED_UNDERSTANDING_TIMEOUT_MS` | unset (uses `BYTEPLUS_REQUEST_TIMEOUT_MS`) | Request timeout for `seed_understand` and `seed_audio_understand` chat completions. Deep thinking is always on, so long analyses may need more than the general request timeout |
 | `FASTMCP_DOCKET_URL` | `memory://` | FastMCP background-task backend used by generation, transcription, upload, provider submission, understanding, and optional media-persistence calls; Redis can retain task state across restarts of the same single-replica deployment; it does not make SQLite state horizontally scalable |
-| `FASTMCP_TASKS_ENCRYPTION_KEY` | unset | Required for JWT-authenticated Redis task backends; use at least 32 random characters and keep the same key across restarts |
+| `FASTMCP_TASKS_ENCRYPTION_KEY` | unset | Required for API-key-authenticated Redis task backends; use at least 32 random characters and keep the same key across restarts |
 | `FASTMCP_DOCKET_CONCURRENCY` | `10` | Maximum active background tasks per worker; provider/principal limits still apply |
 | `ARK_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 
@@ -337,9 +445,10 @@ server restart discards active and retained task state.
 ### Background task ownership and recovery
 
 **Keep the runtime database with the queue.** MCP task ownership is persisted in
-`runtime.sqlite3` using the configured tenant claim and principal. Every
+`runtime.sqlite3` using the fixed `tenant_id` claim key and principal. Every
 `tasks/get`, `tasks/update`, and `tasks/cancel` request checks that owner.
-Missing identity or ownership fails closed in JWT mode.
+Missing identity or ownership fails closed in `api_key` mode. All shared-key
+members use the same `shared-team` owner, including after key rotation.
 
 One shared server process gives all of its clients one queue: in local auth
 mode every loopback client is the same `local`/`local` principal, so a job

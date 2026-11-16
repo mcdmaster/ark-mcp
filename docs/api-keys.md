@@ -1,5 +1,16 @@
 # API Keys Guide
 
+For the separate key members use to connect to a hosted MCP server, see
+[shared MCP key generation](self-hosting.md#shared-mcp-key).
+That key is not a BytePlus provider key. The credentials below stay on the
+server and must not be distributed to shared-server members.
+
+For administrator-managed BytePlus deployments, follow
+[Secret Manager setup and provider-key updates](secret-manager.md).
+That workflow pins one complete four-provider bundle, requires an approved
+sync to update the VM, and preserves the separate shared MCP connection key.
+It does not manage IAM or object-storage credentials.
+
 This server calls several BytePlus services. Each uses a distinct credential
 and auth scheme — they are **not interchangeable**. You only need the keys for
 the products you want to use; absent credentials simply skip registering that
@@ -11,6 +22,7 @@ tool set.
 | Seed Speech | `BYTEPLUS_SEED_SPEECH_API_KEY` | `X-Api-Key: <key>` | Seed Audio (speech generation), Speech-to-Text (ASR) |
 | VOD AI MediaKit | `BYTEPLUS_VOD_MEDIAKIT_API_KEY` | `Authorization: Bearer <key>` | Enhancement, transcode, subtitle burn-in/removal, audio separation, and poll tools |
 | Vision AI (OmniHuman) | `BYTEPLUS_CV_API_KEY` | `Authorization: Bearer <key>` | `omnihuman_*` tools (also needs `BYTEPLUS_OMNIHUMAN_ENABLED=true`) |
+| ModelArk OpenAPI | `BYTEPLUS_MODELARK_ACCESS_KEY` + `BYTEPLUS_MODELARK_SECRET_KEY` (+ session token for STS) | AK/SK V4 signing | Asset tools, cached pricing, and opt-in `ark_moderation_get`; account-wide administration is local-only |
 | TOS | `TOS_ACCESS_KEY` + `TOS_SECRET_KEY` + `TOS_BUCKET` | AK/SK signing | `media_upload`, `media_presign` |
 | S3 | `S3_ACCESS_KEY` + `S3_SECRET_KEY` + `S3_BUCKET` | AK/SK signing | `media_upload`, `media_presign` |
 
@@ -55,6 +67,23 @@ BYTEPLUS_MODELARK_API_KEY=your-modelark-key-here
 
 The base URL is region-scoped. If your account is in a different region, update
 `BYTEPLUS_MODELARK_BASE_URL` to match.
+
+## ModelArk OpenAPI (assets and moderation)
+
+Signed OpenAPI calls use BytePlus IAM AK/SK, not the ModelArk Bearer key.
+Configure `BYTEPLUS_MODELARK_ACCESS_KEY` and `BYTEPLUS_MODELARK_SECRET_KEY`
+together; temporary credentials also need `BYTEPLUS_MODELARK_SESSION_TOKEN`.
+See [asset configuration](configuration.md#private-asset-library-aksk) for the
+OpenAPI host and signing region.
+
+Moderation additionally needs `BYTEPLUS_MODELARK_MODERATION_ENABLED=true`
+(default off), Advanced Creation Rights, whitelist activation and IAM
+`GetModerationResult`. It is account-wide, foreground-only trusted stdio or
+local-mode loopback access; `moderation:read` is never granted to shared HTTP.
+AK/SK also configure asset tools and cached pricing. For a moderation-only IAM
+policy, disable pricing refresh with `BYTEPLUS_MODELARK_PRICING_REFRESH_SECONDS=0`
+and do not grant unrelated permissions. Discovery verifies configuration only;
+live lookup success is unverified. See [moderation.md](moderation.md).
 
 ## Seed Speech
 

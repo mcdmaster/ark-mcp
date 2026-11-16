@@ -11,6 +11,7 @@ If a credential is absent, the server must not register that product's tool set.
 from __future__ import annotations
 
 import os
+import re
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -21,6 +22,7 @@ from pydantic import (
     AliasChoices,
     BaseModel,
     Field,
+    SecretStr,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -68,6 +70,7 @@ def _warn_if_http_body_limit_blocks_media_upload(body_bytes: int) -> None:
 
 
 class SeedreamFamily(StrEnum):
+    SEEDREAM_5_5 = "seedream_5_5"
     PRO = "pro"
     LITE = "lite"
     V4X = "4x"
@@ -78,7 +81,11 @@ class SeedanceFamily(StrEnum):
     FAST = "fast"
     MINI = "mini"
     SEEDANCE_2_5 = "seedance_2_5"
-    SEEDANCE_2_5_PREMIUM = "seedance_2_5_premium"
+    SEEDANCE_2_5_FLASH = "seedance_2_5_flash"
+
+
+SEEDANCE_2_5_FLASH_MODEL_ID = "dreamina-seedance-2-5-flash-261115"
+SEEDANCE_DRAFT_MAX_AGE_DAYS = 14
 
 
 class SeedUnderstandingFamily(StrEnum):
@@ -93,7 +100,7 @@ class Seed3DFamily(StrEnum):
 
 class AuthMode(StrEnum):
     LOCAL = "local"
-    JWT = "jwt"
+    API_KEY = "api_key"
 
 
 class ImageModelBinding(BaseModel):
@@ -202,7 +209,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias="BYTEPLUS_MODELARK_ACCESS_KEY",
         description=(
-            "BytePlus IAM access key ID for signed ModelArk OpenAPI calls (asset library). "
+            "BytePlus IAM access key ID for signed ModelArk OpenAPI calls (assets, moderation, pricing). "
             "Long-term (AKLT...) or STS temporary (AKTP..., requires the session token)."
         ),
     )
@@ -210,6 +217,15 @@ class Settings(BaseSettings):
         default="",
         validation_alias="BYTEPLUS_MODELARK_SECRET_KEY",
         description="BytePlus IAM secret access key paired with BYTEPLUS_MODELARK_ACCESS_KEY.",
+    )
+    modelark_moderation_enabled: bool = Field(
+        default=False,
+        validation_alias="BYTEPLUS_MODELARK_MODERATION_ENABLED",
+        description=(
+            "Enable account-wide moderation block-reason lookup for trusted local callers. "
+            "Requires AK/SK, Advanced Creation Rights and provider whitelist activation; "
+            "disabled by default and denied to shared HTTP key holders."
+        ),
     )
     modelark_session_token: str = Field(
         default="",
@@ -323,7 +339,7 @@ class Settings(BaseSettings):
         ),
     )
     seedream_default_model: str = Field(
-        default="dola-seedream-5-0-pro-260628",
+        default="dola-seedream-5-5-261028",
         validation_alias="SEEDREAM_DEFAULT_MODEL",
     )
     seedance_default_model: str = Field(
@@ -333,14 +349,14 @@ class Settings(BaseSettings):
     seedream_model_family: str = Field(
         default="",
         validation_alias="SEEDREAM_MODEL_FAMILY",
-        description="Explicit family: 'pro', 'lite', or '4x'. Empty = infer from model ID.",
+        description="Explicit family: 'seedream_5_5', 'pro', 'lite', or '4x'. Empty = infer from model ID.",
     )
     seedance_model_family: str = Field(
         default="",
         validation_alias="SEEDANCE_MODEL_FAMILY",
         description=(
             "Explicit family: 'standard', 'fast', 'mini', 'seedance_2_5', or "
-            "'seedance_2_5_premium'. Empty = infer."
+            "'seedance_2_5_flash'. Empty = infer."
         ),
     )
     seedream_model_bindings: list[ImageModelBinding] = Field(
@@ -371,27 +387,6 @@ class Settings(BaseSettings):
         description=(
             "ModelArk model ID used by seed_audio_understand. Must accept Chat "
             "Completions input_audio parts with deep thinking."
-        ),
-    )
-
-    # --- Seedance 2.5 Premium feature flag ----------------------------------
-
-    seedance_2_5_premium_enabled: bool = Field(
-        default=False,
-        validation_alias="BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED",
-        description=(
-            "Feature flag for Seedance 2.5 Premium (4K), a whitelist-only model. "
-            "Disabled by default. When false, the Premium tools are not registered "
-            "and Premium model bindings are rejected."
-        ),
-    )
-    seedance_2_5_premium_model: str = Field(
-        default="dreamina-seedance-2-5-premium-260915",
-        min_length=1,
-        validation_alias="SEEDANCE_2_5_PREMIUM_MODEL",
-        description=(
-            "Seedance 2.5 Premium model ID bound automatically when the Premium "
-            "flag is on and SEEDANCE_MODEL_BINDINGS has no seedance_2_5_premium binding."
         ),
     )
 
@@ -441,41 +436,10 @@ class Settings(BaseSettings):
         validation_alias="MCP_ALLOWED_HOSTS",
     )
     mcp_auth_mode: AuthMode = Field(default=AuthMode.LOCAL, validation_alias="MCP_AUTH_MODE")
-    mcp_jwt_jwks_uri: str | None = Field(default=None, validation_alias="MCP_JWT_JWKS_URI")
-    mcp_jwt_issuer: str | None = Field(default=None, validation_alias="MCP_JWT_ISSUER")
-    mcp_jwt_audience: str | None = Field(default=None, validation_alias="MCP_JWT_AUDIENCE")
-    mcp_tenant_claim: str = Field(
-        default="tenant_id",
-        min_length=1,
-        validation_alias="MCP_TENANT_CLAIM",
-    )
-    mcp_jwt_clock_skew_seconds: int = Field(
-        default=30,
-        ge=0,
-        le=300,
-        validation_alias="MCP_JWT_CLOCK_SKEW_SECONDS",
-        description="Tolerated clock skew (seconds) when validating JWT nbf (not-before) claims.",
-    )
-    mcp_jwt_provide_discovery: bool = Field(
-        default=False,
-        validation_alias="MCP_JWT_PROVIDE_DISCOVERY",
-        description=(
-            "When true and MCP_AUTH_MODE=jwt, serve RFC 9728 OAuth Protected Resource "
-            "Metadata so spec-compliant MCP clients can discover the authorization server."
-        ),
-    )
-    mcp_public_base_url: str = Field(
-        default="",
-        validation_alias="MCP_PUBLIC_BASE_URL",
-        description=(
-            "Public HTTPS base URL of this server, required when MCP_JWT_PROVIDE_DISCOVERY "
-            "is enabled (e.g. 'https://mcp.example.com')."
-        ),
-    )
-    mcp_jwt_scopes_supported: str = Field(
-        default="",
-        validation_alias="MCP_JWT_SCOPES_SUPPORTED",
-        description="Comma-separated scopes to advertise in Protected Resource Metadata.",
+    mcp_api_key_sha256: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="MCP_API_KEY_SHA256",
+        description="Lowercase SHA-256 hex digest of the shared MCP bearer key; never the raw key.",
     )
     readiness_check_providers: bool = Field(
         default=False,
@@ -542,7 +506,10 @@ class Settings(BaseSettings):
         default=30,
         ge=1,
         validation_alias="STATE_PRUNE_MAX_AGE_DAYS",
-        description="Maximum age in days for task-ownership, budget, and cache rows before pruning.",
+        description=(
+            "Maximum age in days for task-ownership, budget, and cache rows before pruning. "
+            "Authenticated HTTP with regular Seedance 2.5 requires at least 14 days."
+        ),
     )
     artifact_dir: str = Field(default="~/.ark-mcp/artifacts", validation_alias="ARTIFACT_DIR")
     artifact_ttl_seconds: int = Field(default=604800, validation_alias="ARTIFACT_TTL_SECONDS")
@@ -714,11 +681,6 @@ class Settings(BaseSettings):
         return bool(self.modelark_api_key)
 
     @property
-    def has_seedance_2_5_premium(self) -> bool:
-        """Whether whitelist-only Seedance 2.5 Premium is enabled (separate flag, same key)."""
-        return self.seedance_2_5_premium_enabled and bool(self.modelark_api_key)
-
-    @property
     def has_seed3d(self) -> bool:
         """Whether ModelArk 3D generation is enabled (separate flag, same key)."""
         return self.seed3d_enabled and bool(self.modelark_api_key)
@@ -740,8 +702,13 @@ class Settings(BaseSettings):
 
     @property
     def has_modelark_openapi(self) -> bool:
-        """Whether AK/SK for signed ModelArk OpenAPI calls (asset library) are configured."""
+        """Whether AK/SK for signed ModelArk OpenAPI calls are configured."""
         return bool(self.modelark_access_key and self.modelark_secret_key)
+
+    @property
+    def has_modelark_moderation(self) -> bool:
+        """Whether moderation lookup is explicitly enabled with complete AK/SK."""
+        return self.modelark_moderation_enabled and self.has_modelark_openapi
 
     @property
     def has_tos(self) -> bool:
@@ -788,12 +755,6 @@ class Settings(BaseSettings):
     def allowed_hosts(self) -> list[str]:
         return [host.strip() for host in self.mcp_allowed_hosts.split(",") if host.strip()]
 
-    @property
-    def jwt_scopes_supported(self) -> list[str]:
-        return [
-            scope.strip() for scope in self.mcp_jwt_scopes_supported.split(",") if scope.strip()
-        ]
-
     @field_validator("mcp_transport")
     @classmethod
     def validate_transport(cls, v: str) -> str:
@@ -839,7 +800,9 @@ class Settings(BaseSettings):
         if not self.seedream_model_bindings:
             family = self.seedream_model_family.strip().lower()
             if not family:
-                if self.seedream_default_model == "dola-seedream-5-0-pro-260628":
+                if self.seedream_default_model == "dola-seedream-5-5-261028":
+                    family = SeedreamFamily.SEEDREAM_5_5
+                elif self.seedream_default_model == "dola-seedream-5-0-pro-260628":
                     family = SeedreamFamily.PRO
                 else:
                     raise ValueError(
@@ -860,8 +823,8 @@ class Settings(BaseSettings):
                     family = SeedanceFamily.STANDARD
                 elif self.seedance_default_model == "dreamina-seedance-2-5-260628":
                     family = SeedanceFamily.SEEDANCE_2_5
-                elif self.seedance_default_model == self.seedance_2_5_premium_model:
-                    family = SeedanceFamily.SEEDANCE_2_5_PREMIUM
+                elif self.seedance_default_model == SEEDANCE_2_5_FLASH_MODEL_ID:
+                    family = SeedanceFamily.SEEDANCE_2_5_FLASH
                 else:
                     raise ValueError(
                         "A custom SEEDANCE_DEFAULT_MODEL requires "
@@ -873,33 +836,13 @@ class Settings(BaseSettings):
                     family=SeedanceFamily(family),
                 )
             ]
-
-        premium_bound = any(
-            binding.family is SeedanceFamily.SEEDANCE_2_5_PREMIUM
-            for binding in self.seedance_model_bindings
-        )
-        if premium_bound and not self.seedance_2_5_premium_enabled:
-            raise ValueError(
-                "Seedance 2.5 Premium is whitelist-only; set "
-                "BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=true to bind a "
-                "seedance_2_5_premium model."
-            )
-        if self.seedance_2_5_premium_enabled and not premium_bound:
-            if any(
-                binding.model_id == self.seedance_2_5_premium_model
-                for binding in self.seedance_model_bindings
-            ):
-                raise ValueError(
-                    f"SEEDANCE_2_5_PREMIUM_MODEL '{self.seedance_2_5_premium_model}' is "
-                    "already bound to a non-Premium family."
+            if self.seedance_default_model != SEEDANCE_2_5_FLASH_MODEL_ID:
+                self.seedance_model_bindings.append(
+                    VideoModelBinding(
+                        model_id=SEEDANCE_2_5_FLASH_MODEL_ID,
+                        family=SeedanceFamily.SEEDANCE_2_5_FLASH,
+                    )
                 )
-            self.seedance_model_bindings = [
-                *self.seedance_model_bindings,
-                VideoModelBinding(
-                    model_id=self.seedance_2_5_premium_model,
-                    family=SeedanceFamily.SEEDANCE_2_5_PREMIUM,
-                ),
-            ]
 
         if not self.seed_understanding_model_bindings:
             family = self.seed_understanding_model_family.strip().lower()
@@ -965,39 +908,33 @@ class Settings(BaseSettings):
             parsed = urlsplit(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.hostname:
                 raise ValueError(f"Invalid MCP allowed origin: '{origin}'")
-        if self.mcp_auth_mode is AuthMode.JWT:
-            missing = [
-                name
-                for name, value in (
-                    ("MCP_JWT_JWKS_URI", self.mcp_jwt_jwks_uri),
-                    ("MCP_JWT_ISSUER", self.mcp_jwt_issuer),
-                    ("MCP_JWT_AUDIENCE", self.mcp_jwt_audience),
-                )
-                if not value
-            ]
-            if missing:
-                raise ValueError(f"JWT auth requires: {', '.join(missing)}")
-            parsed_jwks = urlsplit(self.mcp_jwt_jwks_uri or "")
-            if parsed_jwks.scheme != "https" or not parsed_jwks.hostname:
-                raise ValueError("MCP_JWT_JWKS_URI must be an HTTPS URL")
-        if self.mcp_jwt_provide_discovery:
-            if self.mcp_auth_mode is not AuthMode.JWT:
-                raise ValueError("MCP_JWT_PROVIDE_DISCOVERY requires MCP_AUTH_MODE=jwt.")
-            parsed_base = urlsplit(self.mcp_public_base_url)
-            if parsed_base.scheme != "https" or not parsed_base.hostname:
-                raise ValueError("MCP_PUBLIC_BASE_URL must be an HTTPS URL with a hostname.")
-            parsed_issuer = urlsplit(self.mcp_jwt_issuer or "")
-            if parsed_issuer.scheme not in {"https", "http"} or not parsed_issuer.hostname:
-                raise ValueError(
-                    "MCP_JWT_ISSUER must be an HTTP(S) URL with a hostname when "
-                    "MCP_JWT_PROVIDE_DISCOVERY is enabled."
-                )
+        if self.mcp_auth_mode is AuthMode.API_KEY and not re.fullmatch(
+            r"[a-f0-9]{64}", self.mcp_api_key_sha256.get_secret_value()
+        ):
+            raise ValueError(
+                "API key auth requires MCP_API_KEY_SHA256 (64 lowercase hex characters)."
+            )
+        if (
+            self.mcp_transport == "http"
+            and self.mcp_auth_mode is AuthMode.API_KEY
+            and self.has_modelark
+            and any(
+                binding.family is SeedanceFamily.SEEDANCE_2_5
+                for binding in self.seedance_model_bindings
+            )
+            and self.state_prune_max_age_days < SEEDANCE_DRAFT_MAX_AGE_DAYS
+        ):
+            raise ValueError(
+                f"STATE_PRUNE_MAX_AGE_DAYS must be at least {SEEDANCE_DRAFT_MAX_AGE_DAYS} "
+                "for authenticated HTTP with regular Seedance 2.5, to retain Draft ownership "
+                "throughout its promotion window."
+            )
         if (
             self.mcp_transport == "http"
             and self.mcp_auth_mode is AuthMode.LOCAL
             and self.mcp_host not in {"127.0.0.1", "::1", "localhost"}
         ):
-            raise ValueError("HTTP on a non-loopback host requires MCP_AUTH_MODE=jwt.")
+            raise ValueError("HTTP on a non-loopback host requires MCP_AUTH_MODE=api_key.")
         if bool(self.modelark_access_key) != bool(self.modelark_secret_key):
             raise ValueError(
                 "BYTEPLUS_MODELARK_ACCESS_KEY and BYTEPLUS_MODELARK_SECRET_KEY must both be set "

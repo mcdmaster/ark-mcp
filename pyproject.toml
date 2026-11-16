@@ -1,6 +1,6 @@
 [project]
 name = "ark-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Python MCP server (FastMCP on uv) exposing BytePlus multimodal generation: Seed Audio, Seedream, and Seedance."
 readme = "README.md"
 license = { text = "MIT" }
@@ -11,9 +11,11 @@ requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.43,<2.0",
     "cachetools>=7.1.4,<8",
+    "cryptography>=50.0.2",
     "fastmcp[tasks]>=4.1.8,<4.2",
     "httpx>=0.28.1,<1.0",
     "jsonschema>=4.26.0",
+    "pillow>=13.0.0,<14",
     "prometheus-client>=0.25.0,<1.0",
     "pydantic>=2.13.4,<3.0",
     "pydantic-settings>=2.14.2,<3.0",
@@ -23,7 +25,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.11.26,<0.13.0"]
+requires = ["uv_build>=0.11.26,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -40,6 +42,7 @@ dev = [
     "respx>=0.23.1",
     "ruff>=0.15.22",
     "types-jsonschema>=4.26.0.20260518",
+    "types-pyyaml>=6.0.12.20261111",
 ]
 
 [tool.uv]

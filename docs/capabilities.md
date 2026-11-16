@@ -20,9 +20,18 @@ execution guidance. The tables below help you choose a starting point.
 | Poll video/3D tasks | [gen_task_get](/ark-mcp/tool-reference/gen-task-get/) | Batch status checks; lightweight calls can skip output persistence |
 | List or cancel/delete tasks | [gen_task_list](/ark-mcp/tool-reference/gen-task-list/), [gen_task_cancel_or_delete](/ark-mcp/tool-reference/gen-task-cancel-or-delete/) | Owned-task lifecycle; cancellation/deletion has provider-specific semantics |
 
-Seedance 2.5 is the default generation. Premium 4K needs a feature gate and
-provider whitelist; it is not a separate create tool. The models enabled on
-the ComfyUI node pack are not automatically available in Ark MCP.
+[Seedream 5.5](/ark-mcp/tool-reference/seedream-generate-image/#seedream-5-5) is the built-in image default
+(`dola-seedream-5-5-261028`). It supports text-to-image, reference and point/bbox
+editing, and transparent PNG generation without an already-transparent input.
+Explicit operator defaults remain unchanged. Layer decomposition and native OCR
+are not supported by the MCP integration.
+
+Regular Seedance 2.5 is the default and supports `resolution="4k"` on the
+same model, with no separate model or feature gate. Flash uses the same create
+tool at 480p/720p without Draft. Empty bindings add Flash alongside the selected
+default; explicit lists remain authoritative. Discovery does not prove account
+entitlement. The models enabled on the ComfyUI node pack are not automatically
+available in Ark MCP.
 
 <span id="audio-and-understanding"></span>
 
@@ -123,3 +132,16 @@ Use these ordinary MCP tools on clients without native task augmentation:
 Keep job IDs distinct from provider task IDs. Honor polling hints, inspect
 partial variation failures, and do not retry a potentially accepted create
 call automatically. Start with [Your First Tool Call](setup/first-run.md).
+
+## Moderation Lookup
+
+Use [ark_moderation_get](/ark-mcp/tool-reference/ark-moderation-get/) to retrieve
+reasons for an existing blocked provider record, not to screen new content.
+Requires the default-off `BYTEPLUS_MODELARK_MODERATION_ENABLED` flag + ModelArk
+AK/SK and account entitlement. Account-wide trusted stdio/local-mode loopback
+only; `moderation:read` is excluded from shared-key HTTP. Call directly in the
+foreground, not via `ark_job_submit` or native tasks.
+
+Ten lookups per rolling minute per runtime; no automatic retries or result
+persistence. Empty/not-found never means approval. Live success remains
+unverified; see [Moderation Lookup](moderation.md) for eligibility and bounds.

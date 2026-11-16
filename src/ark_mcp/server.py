@@ -75,6 +75,7 @@ from ark_mcp.tools._catalog import (  # noqa: E402
     ToolDefinition,
     resolve_tool_definition,
 )
+from ark_mcp.tools._moderation_validation import ModerationInputPrivacyMiddleware  # noqa: E402
 
 SERVER_INSTRUCTIONS = (
     "BytePlus multimodal generation server: Seedance video, Seedream images, Seed Audio, "
@@ -178,7 +179,7 @@ class HardenedFastMCP(FastMCP):
 
 
 def _disabled_http_guardrails(settings: Settings) -> list[str]:
-    if settings.mcp_transport != "http" or settings.mcp_auth_mode is not AuthMode.JWT:
+    if settings.mcp_transport != "http" or settings.mcp_auth_mode is AuthMode.LOCAL:
         return []
     disabled = []
     if not settings.daily_budget_usd:
@@ -186,6 +187,32 @@ def _disabled_http_guardrails(settings: Settings) -> list[str]:
     if settings.rate_limit_rpm <= 0:
         disabled.append("RATE_LIMIT_RPM")
     return disabled
+
+
+def _background_local_export_status(settings: Settings) -> str:
+    if settings.mcp_transport != "stdio":
+        return "disabled (stdio only)"
+    roots = settings.output_root_paths
+    if not roots:
+        return "not configured (set OUTPUT_ROOTS; background jobs cannot use client MCP roots)"
+    for root in roots:
+        if "\0" in root:
+            continue
+        try:
+            absolute = Path(root).expanduser().is_absolute()
+        except (RuntimeError, ValueError):
+            continue
+        if absolute:
+            return "configured; needs request preflight"
+    return "not configured (OUTPUT_ROOTS has no usable absolute roots)"
+
+
+def _seedream_default_family(settings: Settings) -> str:
+    return next(
+        binding.family.value
+        for binding in settings.seedream_model_bindings
+        if binding.model_id == settings.seedream_default_model
+    )
 
 
 def create_server(
@@ -206,6 +233,8 @@ def create_server(
         middleware=[MetricsMiddleware()],
         app_settings=resolved_settings,
     )
+    if resolved_settings.has_modelark_moderation:
+        server.add_middleware(ModerationInputPrivacyMiddleware())
     server.add_extension(TenantTasksExtension(resolved_settings))
 
     @server.resource(
@@ -240,15 +269,20 @@ def create_server(
 
     @server.resource("seed-health://status")
     async def health_status() -> str:
-        """Return a credential-free MCP health summary."""
+        """Return credential-free configuration diagnostics, not authorization or readiness."""
         stamp = _build_stamp()
         return (
             "Ark Seed MCP Server\n"
             f"Build: {stamp}\n"
             "Status: healthy\n"
+            "Diagnostics: configuration only; provider authorization is not checked; "
+            "filesystem readiness is not checked\n"
             f"ModelArk configured: {resolved_settings.has_modelark}\n"
+            f"Seedream default model: {resolved_settings.seedream_default_model}\n"
+            f"Seedream default family: {_seedream_default_family(resolved_settings)}\n"
             f"Seed 3D configured: {resolved_settings.has_seed3d}\n"
             f"Asset library configured: {resolved_settings.has_modelark_openapi}\n"
+            f"Moderation lookup configured: {resolved_settings.has_modelark_moderation}\n"
             f"Seed Audio configured: {resolved_settings.has_seed_audio}\n"
             f"VOD AI MediaKit configured: {resolved_settings.has_vod_mediakit}\n"
             f"OmniHuman configured: {resolved_settings.has_omnihuman}\n"
@@ -258,6 +292,7 @@ def create_server(
             f"STT configured: {resolved_settings.has_stt}\n"
             f"Artifact backend: {resolved_settings.artifact_backend}\n"
             f"Transport: {resolved_settings.mcp_transport}\n"
+            f"Background-job local export: {_background_local_export_status(resolved_settings)}\n"
         )
 
     @server.custom_route("/health", methods=["GET"])
@@ -389,6 +424,7 @@ def create_server(
     if not any(
         (
             resolved_settings.has_modelark,
+            resolved_settings.has_modelark_openapi,
             resolved_settings.has_seed_audio,
             resolved_settings.has_seed3d,
             resolved_settings.has_stt,

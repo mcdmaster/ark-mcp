@@ -105,7 +105,7 @@ For Seedance and Seed 3D, and equally for VOD and OmniHuman:
    which needs `OUTPUT_ROOTS`). Record the artifact IDs, or download the
    `video` output's `source_url` (valid about 24 h) yourself and record bytes,
    SHA-256 and `ffprobe` properties.
-4. Draft flow (2.5 family): submit `draft=true` (480p), poll it to success,
+4. Draft flow (regular 2.5 only, not Flash): submit `draft=true` (480p), poll it to success,
    review the preview, then submit once with `draft_task_id` for the final
    render. The provider reuses the Draft's values, so omit the fields it
    fixes (and `variations`); omit `model` to reuse the Draft's model.
@@ -122,18 +122,55 @@ For Seedance and Seed 3D, and equally for VOD and OmniHuman:
   top-left origin; `round(pixel / dimension * 1000)`, capped at 999). **Do not
   write the markup into `prompt`**: the server prepends `Image 1<point>...`
   or `Image 1<bbox>...` itself, and applies it to every variation prompt.
-- `background="transparent"` is a transparency-preserving edit, not a cut-out:
-  exactly one PNG that already has transparent pixels, Seedream 5.0 Pro,
-  `output_format` omitted or `png`. To remove a background from an opaque
-  image, edit it with a prompt instead.
+- `background="transparent"` supports text-only generation or references
+  without alpha on Seedream 5.5. On 5.0 Pro it is a transparency-preserving
+  edit requiring exactly one PNG that already has transparent pixels.
+  Both require `output_format` omitted or `png`.
+- 5.5 defaults to `background="auto"`; use `generations[].images[].background`
+  to read the actual returned background, not infer it from the request.
+  `prompt_optimization` is omitted or `standard`, never `fast`.
+- 5.5 supports size tiers `1K`, `1.5K`, `2K` and bounded custom dimensions;
+  consult discovery. `auto` size and layer-decomposition/OCR controls are rejected.
+- Use only a stable hashed `safety_identifier` (5.5/Pro, 1-64 non-space ASCII);
+  previews/logs redact it, while `generations` preserves the provider echo.
 - To iterate on a generated image, pass its provider URL (valid 24 h) or
   re-upload via `media_upload` and use the presigned URL.
-- A fixed `seed` with the same prompt reproduces a single image. With
+- A fixed `seed` helps reproduce request settings, not guaranteed pixels. With
   `variations > 1`, `seed` is a base: `N` gives `N, N+1, ...`, `-1` picks a
   random recorded seed per variation, omitted leaves them unrecorded. On
-  Seedream 5.0 Pro use `variations` instead of `max_images`.
+  Seedream 5.5 and 5.0 Pro use `variations` instead of `max_images`.
+
+### Seedream generate, review, edit
+
+- Agree an explicit paid-attempt and estimated USD budget before iterating,
+  including `seed_understand` reviews. Stop at either limit; never reroll
+  automatically after byte-inspection or creative failures.
+- Keep the original prompt privately with reference hashes and a lineage
+  manifest. Record Ark job ID, `generations[].request_id`, submitted `seed`,
+  final `prompt_sha256` (including edit markup), `request_options`, usage,
+  artifact ID and SHA-256. Omitted/random seeds are not recovered provider seeds.
+- Check delivery errors, persistence and `images[].inspection` first.
+  `verified` means valid bytes and checked claims, not visual acceptance.
+  Provider reports and local measurements are separate; null is unknown.
+- Review exact text and absence of forbidden text, counts, geometry,
+  visibility, anatomy and composition with an authorized human or
+  `seed_understand` via `ark_job_submit`. Use exported bytes or `media_upload`
+  for a supported review reference; never assume understanding is perfect OCR.
+- Keep `Pass`, `Partial`, `Fail` and `Not evaluated` separate. A review refusal
+  or unavailable reviewer is not a generation failure; exclude it from assessed
+  denominators and do not bypass it.
+- Make an authorized focused edit with `images` and structured `point`/`bbox`;
+  retain the original and record parent artifact/hash, instruction, new request
+  and artifact IDs, cost estimate and review as a new attempt.
+- Only select outputs after acceptance. Check inline previews in published
+  documents/sheets; upload success alone is insufficient. Publishing/link repair
+  stays in the consumer integration. No native Seedream OCR/decomposition tool
+  is exposed. Full workflow: [integration guide](https://byteplus-sa.github.io/ark-mcp/integration-guide/#seedream-review-and-edit).
 
 ### Asset-reference flow (Seedance `asset://`)
+
+The management steps require trusted local access with AK/SK. Shared-key HTTP
+does not grant asset administration; use existing authorized asset IDs there.
 
 1. **One subject per group**; never mix people or characters.
    - Fictional character or product: `ark_asset_create(subject=..., sources=[...])`
@@ -166,8 +203,9 @@ For Seedance and Seed 3D, and equally for VOD and OmniHuman:
   blindly; `persisting` means billed output was not stored.
 - Write image/audio variations to a directory path ending in `/`.
 - `dry_run: true` (Seedance, Seedream) validates against the model's limits
-  and returns request bodies plus `estimated_cost_usd`, a static estimate and
-  not a provider quote. Nothing is sent or billed.
+  and returns request bodies plus `estimated_cost_usd`, an estimate rather than
+  billing or a provider quote. Seedream `preview.price_source` is `catalog`
+  (fresh cached account image rate) or `builtin` (fallback). Nothing is sent or billed.
 
 ### Generation record lifecycle
 
@@ -251,7 +289,8 @@ honoring `Retry-After` (also capped at 4 s). After that the error reaches you.
 ### Budget rejections
 
 With `DAILY_BUDGET_USD` above 0 the server tracks per-principal daily spend
-(UTC day) and rejects a request whose estimate would exceed it, before any
+(UTC day), shared by all `shared-team` members on hosted HTTP, and rejects
+a request whose estimate would exceed it, before any
 provider call ("Daily budget of $X would be exceeded"). At `0` (default) usage
 is recorded but never blocked. Wait for the UTC rollover or raise the limit.
 
@@ -259,7 +298,7 @@ is recorded but never blocked. Wait for the UTC rollover or raise the limit.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Tool missing from the tool list | Provider key or feature flag not set (`BYTEPLUS_MODELARK_3D_ENABLED`, `BYTEPLUS_OMNIHUMAN_ENABLED` plus a separate `BYTEPLUS_CV_API_KEY`, Premium flag, AK/SK, `TOS_*`/`S3_*`) | See [environment.md](environment.md) |
+| Tool missing from the tool list | Provider key or feature flag not set (`BYTEPLUS_MODELARK_3D_ENABLED`, `BYTEPLUS_OMNIHUMAN_ENABLED` plus a separate `BYTEPLUS_CV_API_KEY`, AK/SK, `TOS_*`/`S3_*`) | See [environment.md](environment.md) |
 | `Request is not valid for model ...` (Seedance, Seedream) | Request breaks that model's limits; every violation is listed | Fix each item or pick another model from `ark_list_models`; re-check with `dry_run: true` |
 | Model not found | Unknown ID (exact IDs only) | Use the did-you-mean hint or `ark_list_models` |
 | Artifact has `persistence_error` | Billed output, storage failed after retries | `id="provider-url"`: `seed_media_persist_url` before `source_url_expires_at`; `id="inline-fallback"`: bytes are in `fallback_data` |
@@ -276,7 +315,8 @@ is recorded but never blocked. Wait for the UTC rollover or raise the limit.
 | `omnihuman_get_task` fails with `InvalidParameter ... audio` | Audio is validated only after submission (4-300 s, wav/mp3, under 15 MB; 300 s WAV is 26-58 MB) | Fix the audio (MP3 or shorter) and resubmit; never unchanged |
 | OmniHuman error `50510` | Provider content pre-filter rejected the image or audio | Use different compliant inputs; never retry unchanged |
 | 3D task failed with `AbilityProcessingError` | Transient provider error | Re-submit the same task; the input is not invalid |
-| Auth error (JWT mode) | Missing or invalid token or scope | Check JWT configuration and scopes |
+| HTTP `401` | Missing, wrong or rotated-out shared MCP key | Configure the current key privately as a bearer header; never paste it into chat |
+| Administrative tool unavailable on shared HTTP | Fixed team scopes exclude account-wide asset and moderation operations | Use an authorized local setup; scopes cannot be added to the shared key |
 
 ## Best practices beyond the schemas
 

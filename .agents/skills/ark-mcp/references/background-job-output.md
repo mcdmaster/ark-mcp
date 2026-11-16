@@ -14,6 +14,17 @@ nothing is billed; fix the setting or omit the option and resubmit.
 ends in an error, read the error from `ark_job_get.result`, and record the
 failed Ark job ID beside the operation before resubmitting.
 
+`seed-health://status` reports the effective Seedream default model/family and
+background-export configuration without revealing paths or credentials. A
+configured absolute root is not a writable-destination guarantee; request
+preflight remains authoritative. The resource makes no provider authorization
+or filesystem-readiness probe.
+
+For Seedream, explicit `response_format="b64_json"` requires `persist=true`,
+including dry runs. Returned `generations` preserve per-call provenance and
+separate advisory byte inspection from delivery, provider metadata and visual
+acceptance. Inspection does not regenerate paid images.
+
 ## Large results
 
 `ark_job_capabilities` returns about 120k characters, more than a tool result
@@ -37,3 +48,12 @@ An `ambiguous_completion=True` error that names an output audit
 with no artifact and no provider task ID to reconcile. Mark the operation
 failed and diagnose before any revised submission; never repeat the identical
 request.
+
+`ark_moderation_get` is a separate foreground-only lookup for an eligible
+existing provider ID, not an Ark job ID. It is excluded from `ark_job_submit`
+and native tasks, so a rejection with no provider ID is not automatically
+queryable. Default-off flag + AK/SK and trusted stdio/local-mode loopback access
+are required; `moderation:read` is not granted to shared HTTP. Empty/not-found
+is never approval. Ten lookups per rolling minute per runtime, no automatic
+retries or result persistence; live success unverified. See
+[lookup bounds](understanding-media-assets.md#moderation-lookup-ark_moderation_get).

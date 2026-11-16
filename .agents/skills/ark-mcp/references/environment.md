@@ -33,9 +33,55 @@ its task and MCP SDK dependencies.
   `/ready`, `/metrics`.
 - Output-path arguments (`output_path`, `output_dir`, `save_to`) work on stdio
   only, inside MCP roots or `OUTPUT_ROOTS` ([polling-and-artifacts.md](polling-and-artifacts.md)).
-- For a single-organization deployment, use the Caddy/JWT/Redis Compose kit in
+- For a single-organization deployment, use the Caddy/authenticated-HTTP/Redis Compose kit in
   the repository's `deploy/compose/` and the [self-hosting guide](https://byteplus-sa.github.io/ark-mcp/self-hosting/). Keep one
   replica and configure both spend and rate limits.
+- For BytePlus hosting, the repository's `deploy/terraform/byteplus/` provisions
+  one Ubuntu 24.04 AMD64 ECS host, HTTPS networking, a retained EBS state disk,
+  and optional private TOS. Follow the
+  [Terraform guide](https://byteplus-sa.github.io/ark-mcp/byteplus-terraform/):
+  mount verified storage at `/srv/ark-mcp`, install a root-owned mode-0600 private
+  `.env`, then activate. Never supply application secrets to Terraform or format
+  a recovered disk. Bootstrap changes plan VM replacement; deletion/storage
+  guards require operator-reviewed maintenance. Offline tests are not a live
+  deployment certification.
+  The checkout's `scripts/deploy_byteplus.py` offers `init`, `plan`, approved
+  `deploy`, `resume`, sanitized `status`, nonbillable `verify`, and approved
+  application-only `update`. Use a new private mode-0700 workspace and mode-0600
+  config/provider/token inputs. CLI defaults to a 40-GiB state disk and closed
+  SSH; null hostname selects EIP-derived sslip.io DNS. Preflight checks access
+  and pinned Linux AMD64 shared-key image metadata, not guaranteed quota or
+  exact cost. Private GHCR pulls require explicit temporary credentials.
+  Keep provider/team/Redis/job secrets out of Terraform and plaintext ECS
+  commands; encrypted transfer publishes validated config without overwrite.
+  Resume polls saved invocation IDs; unknown acceptance requires reconciliation,
+  failed guest operations require deliberate `--retry-failed`. Never retry
+  ambiguous paid submissions or rotate retained secrets. `update` preserves
+  state and changes only MCP's installed Compose image, not Terraform bootstrap.
+  This is a checkout CLI, not an account-login or one-click web wizard.
+  Operators should start with the guide's
+  [requirements](https://byteplus-sa.github.io/ark-mcp/byteplus-terraform/#requirements),
+  [dependency setup](https://byteplus-sa.github.io/ark-mcp/byteplus-terraform/#set-up-dependencies),
+  and [IAM setup](https://byteplus-sa.github.io/ark-mcp/byteplus-terraform/#set-up-iam-and-credentials).
+  The deployment workstation needs macOS/Linux, Python 3.12+, uv and Terraform
+  1.9 to below 2.0; ArkCLI, bytedcli and local Docker are not required. Infrastructure
+  AK/SK/STS credentials are separate from product bearer keys and the shared
+  MCP key. Root guest-command access is privileged; the permission checklist
+  is not a validated least-privilege IAM policy. Members connecting to an
+  existing server need none of these operator tools or cloud credentials.
+  [Secret Manager](https://byteplus-sa.github.io/ark-mcp/secret-manager/) supports
+  operator-side pinned generic-secret versions for first deployment and
+  `config status`, `config plan`, approved `config apply`, and unsubmitted
+  `config discard`. The protected reference binds Johor KMS region, account,
+  project, name and exact version UUID. Only the four provider keys are managed;
+  missing entries disable products. Never retrieve real secret values through
+  an agent merely to inspect configuration; status is local and redacted.
+  Secret reads use scoped operator IAM, never new VM IAM credentials. Approved
+  sync recreates only MCP, preserves shared-key/job/storage configuration and
+  resumes staged bytes and accepted IDs. Pause producers and drain jobs before
+  applying. Health/discovery/dry runs do not validate provider credentials.
+  Existing frozen/manual deployments require a separately reviewed migration.
+  Account enablement, IAM scoping and live Secret Manager sync are unverified.
 - Releases use `vX.Y.Z` tags, GitHub wheel/source/checksum assets, and versioned
   GHCR images. `latest` is a release; `edge` is a main build. Prefer a digest
   pin for deployment. PyPI publishing is not configured. Release publication
@@ -47,6 +93,9 @@ its task and MCP SDK dependencies.
 **Do not assume a fixed tool count.** A tool registers only when its gate
 passes; the server degrades to whatever is configured. `ark_list_models.services`
 and `seed-health://status` report what is on.
+The catalog contains 39 tools. The `moderation` service and
+`Moderation lookup configured` health line report configuration, not provider
+entitlement or shared-key permission.
 
 | Setting | Enables |
 |---|---|
@@ -55,10 +104,10 @@ and `seed-health://status` report what is on.
 | `BYTEPLUS_SEED_SPEECH_API_KEY` | `seed_audio_generate`, `speech_to_text` (one key, both products) |
 | `BYTEPLUS_VOD_MEDIAKIT_API_KEY` | `vod_enhance_video`, `vod_transcode_video`, `vod_add_subtitles`, `vod_remove_subtitles`, `vod_separate_audio`, `vod_get_task` |
 | `BYTEPLUS_MODELARK_3D_ENABLED=true` + ModelArk key | `hyper3d_create_task`, `hitem3d_create_task` (default off; reuses the ModelArk key) |
-| `BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=true` + ModelArk key | Binds the whitelist-only Premium (4K) model so `seedance_create_task` accepts it as `model`. **No extra tools**; default off; ID from `SEEDANCE_2_5_PREMIUM_MODEL` |
 | `BYTEPLUS_OMNIHUMAN_ENABLED=true` + `BYTEPLUS_CV_API_KEY` | `omnihuman_create_task`, `omnihuman_get_task`, `omnihuman_cancel_task`. Separate Vision AI Bearer key; default off. Overrides: `BYTEPLUS_CV_BASE_URL`, `BYTEPLUS_OMNIHUMAN_REQ_KEY` |
 | `BYTEPLUS_MODELARK_ACCESS_KEY` + `BYTEPLUS_MODELARK_SECRET_KEY` | `ark_asset_group_ensure`, `ark_asset_group_list`, `ark_asset_create`, `ark_asset_list`, `ark_asset_update`, `ark_asset_verification_start`, `ark_asset_verification_result` (plus `BYTEPLUS_MODELARK_SESSION_TOKEN` for STS `AKTP...` keys) |
 | `BYTEPLUS_MODELARK_ASSETS_ALLOW_DELETE=true` + AK/SK | Additionally registers the irreversible `ark_asset_delete` (default off) |
+| `BYTEPLUS_MODELARK_MODERATION_ENABLED=true` + AK/SK | `ark_moderation_get`, foreground-only account-wide trusted stdio/local-mode loopback lookup (default off; STS also needs session token) |
 | `TOS_ACCESS_KEY` + `TOS_SECRET_KEY` + `TOS_BUCKET` (default backend) | `media_upload`, `media_presign` |
 | `OBJECT_STORAGE_BACKEND=s3` + `S3_ACCESS_KEY` + `S3_SECRET_KEY` + `S3_BUCKET` | Same two tools on S3 or S3-compatible storage (`S3_ENDPOINT`) |
 
@@ -83,10 +132,17 @@ Gotchas that follow from the gates:
   default; `0` disables, positive values have a 60-second minimum).
   Discovery reads the cache only. Image and understanding estimates use
   recognized fresh rates, otherwise built-in rates. Configuring these keys
-  also registers asset tools; restrict their scopes on shared HTTP.
+  also registers asset tools, but the fixed shared-key scopes exclude them.
+- **Moderation entitlement is separate:** Advanced Creation Rights, whitelist
+  activation and IAM `GetModerationResult` are required. For an isolated lookup,
+  disable pricing refresh with `BYTEPLUS_MODELARK_PRICING_REFRESH_SECONDS=0`;
+  do not broaden a moderation-only IAM policy for assets or pricing.
 - A custom model ID must be bound (`SEEDREAM_MODEL_BINDINGS`,
   `SEEDANCE_MODEL_BINDINGS`, `SEED_UNDERSTANDING_MODEL_BINDINGS`,
   `SEED3D_MODEL_BINDINGS`); see [models-and-limits.md](models-and-limits.md).
+- Empty Seedance bindings add Flash alongside the selected default; explicit
+  lists remain authoritative. Use `seedance_2_5_flash` for Flash endpoints.
+  Regular 2.5 remains the default; there is no separate Flash tool or flag.
 
 ### Provider hosts and timeouts
 
@@ -95,7 +151,7 @@ Gotchas that follow from the gates:
 | `BYTEPLUS_MODELARK_BASE_URL` | `https://ark.ap-southeast.bytepluses.com/api/v3` | Key is region-scoped; must match |
 | `BYTEPLUS_SEED_AUDIO_BASE_URL`, `SEED_SPEECH_ASR_BASE_URL` | `https://voice.ap-southeast-1.bytepluses.com` | Seed Audio / ASR hosts |
 | `BYTEPLUS_VOD_MEDIAKIT_BASE_URL` | `https://mediakit.ap-southeast-1.bytepluses.com/api/v1` | Must be HTTPS |
-| `BYTEPLUS_MODELARK_OPENAPI_BASE_URL` | `https://ark.ap-southeast-1.byteplusapi.com` | Asset library control plane (signed with AK/SK) |
+| `BYTEPLUS_MODELARK_OPENAPI_BASE_URL` | `https://ark.ap-southeast-1.byteplusapi.com` | Assets, moderation and pricing control plane (signed with AK/SK) |
 | `SEED_SPEECH_ASR_POLL_INTERVAL_SECONDS` / `_MAX_SECONDS` | `3` / `600` | Server-side ASR polling cadence and ceiling |
 | `BYTEPLUS_CONNECT_TIMEOUT_MS` / `BYTEPLUS_REQUEST_TIMEOUT_MS` | `10000` / `600000` | Provider connect and full-request timeouts |
 | `SEED_UNDERSTANDING_TIMEOUT_MS` | request timeout | `seed_understand` and `seed_audio_understand`; deep thinking can need more |
@@ -104,24 +160,40 @@ Gotchas that follow from the gates:
 
 | Mode | Where | Behaviour |
 |---|---|---|
-| `MCP_AUTH_MODE=local` (default) | stdio or loopback HTTP | One trusted principal `local`; no scopes checked |
-| `MCP_AUTH_MODE=jwt` | HTTP (required off loopback) | RS256 JWT verified against a JWKS; every call needs a principal, scopes enforced per tool |
+| `MCP_AUTH_MODE=local` (Python default) | stdio or loopback HTTP | One trusted principal `local`; no scopes checked |
+| `MCP_AUTH_MODE=api_key` | HTTP | One shared team bearer key, verified against `MCP_API_KEY_SHA256`; shared identity, data access and budget |
 
+- Docker, Compose and Terraform default to `api_key`.
 - **Fail closed:** HTTP on a non-loopback `MCP_HOST` with `local` auth refuses to
   start. Over loopback, any local process that can reach the port acts as
   `local` (all clients of one loopback server see each other's background jobs),
   so do not proxy it.
-- **JWT mode requires** `MCP_JWT_JWKS_URI` (https), `MCP_JWT_ISSUER`,
-  `MCP_JWT_AUDIENCE`. Principal is `sub` (else `client_id`); tenant comes from
-  the claim named by `MCP_TENANT_CLAIM` (default `tenant_id`); tokens need `exp`.
-  Optional: `MCP_JWT_CLOCK_SKEW_SECONDS` (30), `MCP_JWT_PROVIDE_DISCOVERY` with
-  `MCP_PUBLIC_BASE_URL` and `MCP_JWT_SCOPES_SUPPORTED` for OAuth discovery.
+- **Shared-key mode requires** `MCP_API_KEY_SHA256` (64 lowercase hex characters).
+  Generate with `python scripts/generate_mcp_key.py /private/new-team.key`;
+  raw key is written to a new mode-0600 file, only the hash is output. On
+  Terraform hosts use `/opt/ark-mcp/generate_mcp_key.py`. Never read or echo a
+  real key into chat or tool logs. Send it through client bearer headers over HTTPS.
+  There is no login or OAuth discovery. The fixed `shared-team` tenant/principal
+  has ordinary generation/media/task scopes but no account-wide asset or moderation
+  privileges. All members share data, budget, and concurrency. Rotate for everyone
+  when membership changes: drain work, update the hash, recreate the application
+  container (plain restart does not reload `.env`). Preserve SQLite, Redis,
+  artifacts and the task encryption key.
+- **Breaking change:** the old `jwt` mode is rejected. Retired `MCP_JWT_*`,
+  `MCP_TENANT_CLAIM` and `MCP_PUBLIC_BASE_URL` settings are not used. Old user
+  or local ownership is not automatically transferred to `shared-team`.
+  Generic bearer claims remain internal for ownership tests; the tenant claim
+  key is fixed to `tenant_id`, not configurable. See
+  [migration guidance](https://byteplus-sa.github.io/ark-mcp/self-hosting/#breaking-change-migration).
 - **Create scopes are per product** (that is where spend happens); read and
   delete scopes are shared. `ark_list_models` and `ark_job_*` need a principal
   but no scope: job tools enforce the **target tool's** scope at submit time.
 - `seed-health://status`, `/health`, `/ready`, `/metrics` are not scope-protected.
 
-### Scopes per tool (JWT mode)
+### Fixed ordinary team scopes
+
+These scopes are enforced by the server, not assigned through roles or
+selected by the client. Provider credentials and feature gates still apply.
 
 | Scope | Tools |
 |---|---|
@@ -138,11 +210,12 @@ Gotchas that follow from the gates:
 | `media:upload` | `media_upload`, `seed_media_persist_url` |
 | `media:presign` | `media_presign` |
 | `artifacts:read` | `seed_media_get_artifact`, `seed_media_export_artifact`, `seed-media://artifacts/{id}` |
-| `assets:read` / `assets:write` | `ark_asset_group_list`, `ark_asset_list` / `ark_asset_group_ensure`, `ark_asset_create`, `ark_asset_update` |
-| `assets:verify` / `assets:delete` | both `ark_asset_verification_*` tools / `ark_asset_delete` |
 
-Asset management acts on the whole BytePlus account, not per principal: grant
-`assets:*` only to trusted callers.
+Account-wide `assets:*` and `moderation:*` privileges are excluded. Use
+trusted local stdio for administration with the relevant provider gates;
+setting AK/SK or feature flags does not grant shared-key callers access.
+In particular, `moderation:read` is a catalog permission label, not a scope
+granted to shared HTTP. Loopback access requires `MCP_AUTH_MODE=local`.
 
 ## HTTP rate limiting and readiness
 
@@ -164,12 +237,18 @@ Asset management acts on the whole BytePlus account, not per principal: grant
 | Service | Behaviour | Settings |
 |---|---|---|
 | Artifact store | Durable media, metadata, ownership, TTL cleanup; a billed output is never dropped because storage failed | `ARTIFACT_BACKEND` (`filesystem` default, or `object_storage`), `ARTIFACT_DIR` (`~/.ark-mcp/artifacts`), `ARTIFACT_TTL_SECONDS` (7 days), `ARTIFACT_SWEEP_INTERVAL_SECONDS` |
-| Ownership / budget / cache state | SQLite, single instance; task ID to principal mapping enforced for Seedance and 3D | `STATE_BACKEND=sqlite`, `STATE_PRUNE_MAX_AGE_DAYS` (30), `PERSISTENCE_CACHE_MAX_SIZE` / `_TTL_SECONDS` |
-| Budget ledger | Per-principal UTC daily spend estimate; a call that would exceed the limit is rejected before it reaches the provider | `DAILY_BUDGET_USD` (`0` records without blocking) |
-| Provider limiters | Per-provider semaphore for every call; per-principal semaphore for JWT principals only (stdio and local HTTP are bounded by the provider limit alone) | `PROVIDER_MAX_CONCURRENCY` (5), `PRINCIPAL_MAX_CONCURRENCY` (3) |
+| Ownership / budget / cache state | SQLite, single instance; task ID to principal mapping enforced for Seedance and 3D | `STATE_BACKEND=sqlite`, `STATE_PRUNE_MAX_AGE_DAYS` (30; minimum 14 for authenticated HTTP with regular 2.5 enabled), `PERSISTENCE_CACHE_MAX_SIZE` / `_TTL_SECONDS` |
+| Budget ledger | Per-principal UTC daily spend estimate, shared by the whole team on hosted HTTP; a call that would exceed the limit is rejected before it reaches the provider | `DAILY_BUDGET_USD` (`0` records without blocking) |
+| Provider limiters | Per-provider concurrency; one shared-team principal semaphore on authenticated HTTP (local mode skips the principal semaphore; moderation also has a dedicated quota guard) | `PROVIDER_MAX_CONCURRENCY` (5), `PRINCIPAL_MAX_CONCURRENCY` (3) |
+| Moderation quota | Ten admitted lookups per rolling minute per runtime, shared across callers/ID types; exhaustion returns `LOCAL_RATE_LIMITED` with no provider call; in-memory, not distributed | Fixed bound; independent of HTTP RPM and concurrency settings |
 | Safe downloader | SSRF-safe provider-output downloads with IP pinning and redirect validation; retries timeouts, network errors, 408/429/5xx with 1s, 2s, 4s backoff; never retries policy failures | `ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS` (120), `ARTIFACT_DOWNLOAD_MAX_ATTEMPTS` (3) |
-| Background jobs | FastMCP task backend behind `ark_job_*`; the default in-memory backend is process-local, so a restart discards active and retained jobs | `FASTMCP_DOCKET_URL` (`memory://`), `FASTMCP_DOCKET_CONCURRENCY` (10), `FASTMCP_TASKS_ENCRYPTION_KEY` (required for JWT with Redis) |
+| Background jobs | FastMCP task backend behind `ark_job_*`; the default in-memory backend is process-local, so a restart discards active and retained jobs | `FASTMCP_DOCKET_URL` (`memory://`), `FASTMCP_DOCKET_CONCURRENCY` (10), `FASTMCP_TASKS_ENCRYPTION_KEY` (required for shared-key auth with Redis) |
 
+- **Draft ownership:** authenticated HTTP with ModelArk credentials and any
+  `seedance_2_5` binding requires `STATE_PRUNE_MAX_AGE_DAYS >= 14`, including
+  custom/non-default bindings. Shorter overrides fail at startup; the default
+  30 is safe. Flash-only, legacy-only, local, and disabled ModelArk settings
+  keep the one-day minimum. Increasing retention cannot restore pruned ownership.
 - **Inline fallback:** if storage fails for inline Base64 output (Seed Audio,
   Seedream `b64_json`), it is returned inline up to
   `ARTIFACT_INLINE_FALLBACK_MAX_BYTES` (default 8 MiB; `0` disables).
@@ -182,6 +261,11 @@ Asset management acts on the whole BytePlus account, not per principal: grant
   are not shared across replicas.
 
 ### Retry policy
+
+`ark_moderation_get` bypasses automatic retries: at most one provider request
+per admitted foreground lookup, no result persistence. Lookup pricing is
+unspecified and live success remains unverified; see
+[Moderation Lookup](https://byteplus-sa.github.io/ark-mcp/moderation/).
 
 **Only safe failures are retried.** A provider error is retried (up to 3
 attempts, 0.25s base delay doubling to a 4s cap, 20% jitter, honouring
@@ -215,7 +299,7 @@ flowchart LR
 | Seed Speech | `X-Api-Key: <BYTEPLUS_SEED_SPEECH_API_KEY>` | Seed Audio and Speech-to-Text (told apart by `X-Api-Resource-Id`, not by key) |
 | VOD AI MediaKit | `Authorization: Bearer <BYTEPLUS_VOD_MEDIAKIT_API_KEY>` | Enhancement, transcode, subtitles, audio separation |
 | Vision AI (optional) | `Authorization: Bearer <BYTEPLUS_CV_API_KEY>` | OmniHuman 2.0 |
-| ModelArk OpenAPI (optional) | IAM AK/SK, V4 signatures | Private asset library |
+| ModelArk OpenAPI (optional) | IAM AK/SK, V4 signatures | Private asset library, opt-in moderation lookup and cached pricing |
 
 Inputs are validated against a model-capability registry before quota is spent
 ([models-and-limits.md](models-and-limits.md)). For tool inputs and outputs see

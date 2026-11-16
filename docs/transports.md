@@ -7,6 +7,15 @@ The server supports stdio and FastMCP Streamable HTTP.
 page are for developers and server operators, not extra steps after adding
 Ark to your client.
 
+## Runtime upgrade
+
+The locked runtime is FastMCP 4.1.8, which includes the authorization fixes
+released in [4.1.2](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.2).
+Compared with 4.0, stateful HTTP sessions inherit the MCP SDK's 30-minute idle
+timeout; clients must reconnect expired sessions. Drain active generation jobs
+before restarting for an upgrade, especially with the default in-memory queue.
+See the [4.1 upgrade notes](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0).
+
 ## stdio
 
 stdio is the secure local default. MCP JSON-RPC uses stdin/stdout; structured
@@ -74,23 +83,33 @@ Caveats:
 - Set an absolute `ARTIFACT_DIR` so the state database does not depend on the
   server's working directory.
 
-Network deployment must use JWT verification:
+### Protected network deployment
+
+Network deployment uses only
+[shared-key authentication](self-hosting.md#shared-mcp-key). Generate the key
+with `scripts/generate_mcp_key.py` and store its emitted `MCP_API_KEY_SHA256`
+assignment in private server configuration before starting:
 
 ```bash
 MCP_TRANSPORT=http \
 MCP_HOST=0.0.0.0 \
-MCP_AUTH_MODE=jwt \
-MCP_JWT_JWKS_URI=https://id.example.com/.well-known/jwks.json \
-MCP_JWT_ISSUER=https://id.example.com/ \
-MCP_JWT_AUDIENCE=ark-mcp \
+MCP_AUTH_MODE=api_key \
 MCP_ALLOWED_HOSTS=mcp.example.com \
 MCP_ALLOWED_ORIGINS=https://client.example.com \
 uv run python -m ark_mcp
 ```
 
-The server validates JWT signature, issuer, audience, scopes, principal, and
-tenant. Host/Origin protection and a streamed body-size limit are enabled.
+The server hashes each bearer key and compares it with the configured digest.
+Host/Origin protection and a streamed body-size limit are enabled.
 Terminate TLS at a trusted reverse proxy and pass the original Host header.
+
+Clients send `Authorization: Bearer <shared MCP key>` over HTTPS. There is no
+login or OAuth discovery. All members use tenant and principal `shared-team`,
+sharing data, budgets and fixed ordinary scopes; asset and moderation
+administration is excluded. Local file operations remain unavailable.
+Docker, Compose and Terraform default to `api_key`; Python defaults to `local`.
+For retired authentication settings, see
+[breaking-change migration](self-hosting.md#breaking-change-migration).
 
 ## Operational HTTP routes
 
@@ -112,5 +131,5 @@ make inspect
 make inspect-dev
 ```
 
-For authenticated HTTP inspection, configure the inspector/client to send a
-Bearer token with the scopes needed by the tools being tested.
+For authenticated HTTP inspection, configure the inspector/client privately
+with the shared MCP bearer key. Its ordinary scopes are fixed by the server.

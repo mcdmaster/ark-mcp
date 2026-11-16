@@ -81,42 +81,51 @@ class TestSettings:
                 ],
             )
 
-    def test_seedance_2_5_premium_disabled_by_default(self) -> None:
-        settings = Settings(_env_file=None, BYTEPLUS_MODELARK_API_KEY="sk-test")
-        assert not settings.seedance_2_5_premium_enabled
-        assert not settings.has_seedance_2_5_premium
-        assert all(
-            binding.family != "seedance_2_5_premium" for binding in settings.seedance_model_bindings
-        )
-
-    def test_seedance_2_5_premium_requires_both_flag_and_key(self) -> None:
-        assert not Settings(
-            _env_file=None, BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True
-        ).has_seedance_2_5_premium
-        assert Settings(
-            _env_file=None,
-            BYTEPLUS_MODELARK_API_KEY="sk-test",  # pragma: allowlist secret
-            BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True,
-        ).has_seedance_2_5_premium
-
-    def test_seedance_2_5_premium_flag_appends_binding(self) -> None:
+    def test_removed_premium_settings_do_not_add_bindings(self) -> None:
         settings = Settings(
             _env_file=None,
-            SEEDANCE_DEFAULT_MODEL="dreamina-seedance-2-0-260128",
             BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True,
-            SEEDANCE_MODEL_BINDINGS=[
-                {"model_id": "dreamina-seedance-2-0-260128", "family": "standard"}
-            ],
+            SEEDANCE_2_5_PREMIUM_MODEL="ep-retired",
         )
         bindings = {b.model_id: b.family for b in settings.seedance_model_bindings}
-        assert bindings["dreamina-seedance-2-5-premium-260915"] == "seedance_2_5_premium"
-        assert bindings["dreamina-seedance-2-0-260128"] == "standard"
+        assert "seedance_2_5_premium" not in bindings.values()
+        assert "ep-retired" not in bindings
+        assert "seedance_2_5_premium_enabled" not in Settings.model_fields
+        assert "seedance_2_5_premium_model" not in Settings.model_fields
 
     def test_seedance_default_model_is_2_5(self) -> None:
         settings = Settings(_env_file=None)
         assert settings.seedance_default_model == "dreamina-seedance-2-5-260628"
         bindings = {b.model_id: b.family for b in settings.seedance_model_bindings}
-        assert bindings == {"dreamina-seedance-2-5-260628": "seedance_2_5"}
+        assert bindings == {
+            "dreamina-seedance-2-5-260628": "seedance_2_5",
+            "dreamina-seedance-2-5-flash-261115": "seedance_2_5_flash",
+        }
+
+    def test_flash_default_model_infers_family_without_duplicates(self) -> None:
+        settings = Settings(
+            _env_file=None, SEEDANCE_DEFAULT_MODEL="dreamina-seedance-2-5-flash-261115"
+        )
+        assert len(settings.seedance_model_bindings) == 1
+        assert settings.seedance_model_bindings[0].family == "seedance_2_5_flash"
+
+    def test_explicit_bindings_do_not_automatically_add_flash(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            SEEDANCE_MODEL_BINDINGS=[
+                {"model_id": "dreamina-seedance-2-5-260628", "family": "seedance_2_5"}
+            ],
+        )
+        assert len(settings.seedance_model_bindings) == 1
+
+    def test_custom_flash_endpoint_requires_and_accepts_explicit_family(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            SEEDANCE_DEFAULT_MODEL="ep-flash",
+            SEEDANCE_MODEL_FAMILY="seedance_2_5_flash",
+        )
+        assert settings.seedance_model_bindings[0].model_id == "ep-flash"
+        assert settings.seedance_model_bindings[0].family == "seedance_2_5_flash"
 
     def test_2_0_only_bindings_without_default_explain_the_fix(self) -> None:
         with pytest.raises(ValueError) as excinfo:
@@ -130,54 +139,24 @@ class TestSettings:
         assert "default model 'dreamina-seedance-2-5-260628' is missing" in message
         assert "dreamina-seedance-2-0-260128" in message
 
-    def test_seedance_2_5_premium_model_override(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True,
-            SEEDANCE_2_5_PREMIUM_MODEL="ep-premium-endpoint",
-        )
-        ids = [b.model_id for b in settings.seedance_model_bindings]
-        assert "ep-premium-endpoint" in ids
-        assert "dreamina-seedance-2-5-premium-260915" not in ids
-
-    def test_seedance_2_5_premium_explicit_binding_kept(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            SEEDANCE_DEFAULT_MODEL="dreamina-seedance-2-0-260128",
-            BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True,
-            SEEDANCE_MODEL_BINDINGS=[
-                {"model_id": "dreamina-seedance-2-0-260128", "family": "standard"},
-                {"model_id": "ep-premium", "family": "seedance_2_5_premium"},
-            ],
-        )
-        ids = [b.model_id for b in settings.seedance_model_bindings]
-        assert ids == ["dreamina-seedance-2-0-260128", "ep-premium"]
-
-    def test_seedance_2_5_premium_binding_rejected_without_flag(self) -> None:
-        with pytest.raises(ValueError, match="whitelist-only"):
+    def test_removed_premium_binding_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Input should be"):
             Settings(
                 _env_file=None,
                 SEEDANCE_MODEL_BINDINGS=[
-                    {"model_id": "dreamina-seedance-2-0-260128", "family": "standard"},
                     {
-                        "model_id": "dreamina-seedance-2-5-premium-260915",
+                        "model_id": "ep-retired",
                         "family": "seedance_2_5_premium",
                     },
                 ],
             )
 
-    def test_seedance_2_5_premium_model_bound_to_other_family_rejected(self) -> None:
-        with pytest.raises(ValueError, match="non-Premium family"):
+    def test_removed_premium_default_family_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="not a valid SeedanceFamily"):
             Settings(
                 _env_file=None,
-                BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=True,
-                SEEDANCE_MODEL_BINDINGS=[
-                    {"model_id": "dreamina-seedance-2-0-260128", "family": "standard"},
-                    {
-                        "model_id": "dreamina-seedance-2-5-premium-260915",
-                        "family": "seedance_2_5",
-                    },
-                ],
+                SEEDANCE_DEFAULT_MODEL="ep-retired",
+                SEEDANCE_MODEL_FAMILY="seedance_2_5_premium",
             )
 
     def test_omnihuman_disabled_by_default(self) -> None:
@@ -229,13 +208,90 @@ class TestSettings:
         with pytest.raises(ValueError):
             Settings(_env_file=None, MCP_TRANSPORT="invalid")
 
-    def test_non_loopback_http_requires_jwt(self) -> None:
-        with pytest.raises(ValueError, match="requires MCP_AUTH_MODE=jwt"):
+    def test_non_loopback_http_requires_api_key(self) -> None:
+        with pytest.raises(ValueError, match="requires MCP_AUTH_MODE=api_key"):
             Settings(_env_file=None, MCP_TRANSPORT="http", MCP_HOST="0.0.0.0")
 
-    def test_jwt_requires_verifier_configuration(self) -> None:
-        with pytest.raises(ValueError, match="JWT auth requires"):
-            Settings(_env_file=None, MCP_AUTH_MODE="jwt")
+    def test_api_key_requires_verifier_configuration(self) -> None:
+        with pytest.raises(ValueError, match="API key auth requires"):
+            Settings(_env_file=None, MCP_AUTH_MODE="api_key")
+
+    @pytest.mark.parametrize("retention", [1, 7, 13])
+    @pytest.mark.parametrize("model", ["dreamina-seedance-2-5-260628", "ep-draft"])
+    def test_authenticated_draft_models_reject_short_ownership_retention(
+        self, monkeypatch: pytest.MonkeyPatch, retention: int, model: str
+    ) -> None:
+        monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test")
+        with pytest.raises(ValueError, match="STATE_PRUNE_MAX_AGE_DAYS must be at least 14"):
+            Settings(
+                _env_file=None,
+                MCP_TRANSPORT="http",
+                MCP_AUTH_MODE="api_key",
+                MCP_API_KEY_SHA256="a" * 64,
+                SEEDANCE_DEFAULT_MODEL=model,
+                SEEDANCE_MODEL_FAMILY="seedance_2_5",
+                STATE_PRUNE_MAX_AGE_DAYS=retention,
+            )
+
+    @pytest.mark.parametrize("retention", [14, 30])
+    @pytest.mark.parametrize("model", ["dreamina-seedance-2-5-260628", "ep-draft"])
+    def test_authenticated_draft_models_accept_full_ownership_retention(
+        self, monkeypatch: pytest.MonkeyPatch, retention: int, model: str
+    ) -> None:
+        monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test")
+        settings = Settings(
+            _env_file=None,
+            MCP_TRANSPORT="http",
+            MCP_AUTH_MODE="api_key",
+            MCP_API_KEY_SHA256="a" * 64,
+            SEEDANCE_DEFAULT_MODEL=model,
+            SEEDANCE_MODEL_FAMILY="seedance_2_5",
+            STATE_PRUNE_MAX_AGE_DAYS=retention,
+        )
+        assert settings.state_prune_max_age_days == retention
+
+    def test_nondefault_draft_binding_requires_full_ownership_retention(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test")
+        with pytest.raises(ValueError, match="STATE_PRUNE_MAX_AGE_DAYS must be at least 14"):
+            Settings(
+                _env_file=None,
+                MCP_TRANSPORT="http",
+                MCP_AUTH_MODE="api_key",
+                MCP_API_KEY_SHA256="a" * 64,
+                SEEDANCE_DEFAULT_MODEL="ep-flash",
+                SEEDANCE_MODEL_BINDINGS=[
+                    {"model_id": "ep-flash", "family": "seedance_2_5_flash"},
+                    {"model_id": "ep-draft", "family": "seedance_2_5"},
+                ],
+                STATE_PRUNE_MAX_AGE_DAYS=7,
+            )
+
+    @pytest.mark.parametrize(
+        "transport,auth_mode,provider_key,model,family",
+        [
+            ("stdio", "local", "sk-test", "ep-draft", "seedance_2_5"),
+            ("http", "local", "sk-test", "ep-draft", "seedance_2_5"),
+            ("http", "api_key", "", "ep-draft", "seedance_2_5"),
+            ("http", "api_key", "sk-test", "ep-flash", "seedance_2_5_flash"),
+            ("http", "api_key", "sk-test", "ep-legacy", "standard"),
+        ],
+    )
+    def test_configurations_without_authenticated_drafts_keep_short_retention(
+        self, transport: str, auth_mode: str, provider_key: str, model: str, family: str
+    ) -> None:
+        settings = Settings(
+            _env_file=None,
+            BYTEPLUS_MODELARK_API_KEY=provider_key,
+            MCP_TRANSPORT=transport,
+            MCP_AUTH_MODE=auth_mode,
+            MCP_API_KEY_SHA256="a" * 64,
+            SEEDANCE_DEFAULT_MODEL=model,
+            SEEDANCE_MODEL_FAMILY=family,
+            STATE_PRUNE_MAX_AGE_DAYS=1,
+        )
+        assert settings.state_prune_max_age_days == 1
 
     def test_timeout_defaults(self) -> None:
         settings = Settings(_env_file=None)

@@ -7,7 +7,7 @@ from typing import Literal
 from fastmcp import Context
 from pydantic import BaseModel, Field
 
-from ark_mcp.config.env import Settings, get_settings
+from ark_mcp.config.env import Settings
 from ark_mcp.config.model_capabilities import (
     ImageCapabilities,
     ModelFamily,
@@ -18,6 +18,7 @@ from ark_mcp.config.model_capabilities import (
 )
 from ark_mcp.domain.pricing import ModelPricing, PricingStatus
 from ark_mcp.providers.modelark.pricing import get_price_book, live_pricing_enabled
+from ark_mcp.runtime import get_runtime
 from ark_mcp.tools.seed_audio_understand import MAX_AUDIO_INPUTS
 
 ModelKind = Literal["video", "image", "3d", "understanding"]
@@ -76,14 +77,36 @@ class VideoModelLimits(BaseModel):
 class ImageModelLimits(BaseModel):
     """Per-model limits for a Seedream image model."""
 
-    max_reference_images: int = Field(..., description="Maximum reference images per request.")
-    output_formats: list[str] = Field(..., description="Accepted output_format values.")
-    supports_batch: bool = Field(..., description="Whether max_images greater than 1 is accepted.")
+    max_reference_images: int = Field(..., description="Maximum reference images.")
+    output_formats: list[str] = Field(..., description="Accepted output formats.")
+    supports_batch: bool = Field(..., description="Accepts max_images > 1.")
     supported_sizes: list[str] | None = Field(
-        None, description="Allowed size values; null means any size the provider accepts."
+        None, description="Named size tiers (5.5 default: 2K); null for provider validation."
+    )
+    custom_size_pixels_range: tuple[int, int] | None = Field(
+        None, description="Inclusive custom WIDTHxHEIGHT pixel-count bounds; null if unspecified."
+    )
+    custom_size_aspect_ratio_range: tuple[float, float] | None = Field(
+        None, description="Inclusive custom width/height ratio bounds; null if unspecified."
+    )
+    background_modes: list[str] = Field(
+        ..., description="Accepted backgrounds; 5.5 defaults to auto, older models to opaque."
+    )
+    prompt_optimization_modes: list[str] = Field(
+        ..., description="Accepted explicit prompt_optimization modes."
+    )
+    supports_safety_identifier: bool = Field(
+        ..., description="Accepts a hashed end-user safety_identifier."
     )
     supports_transparent_background: bool = Field(
-        ..., description="Whether background='transparent' is accepted."
+        ..., description="Accepts background='transparent'."
+    )
+    supports_transparent_generation: bool = Field(
+        ...,
+        description="Transparent PNGs from text-only prompts or references without alpha (5.5).",
+    )
+    supports_prompt_optimization: bool = Field(
+        ..., description="Accepts explicit prompt_optimization."
     )
 
 
@@ -178,7 +201,7 @@ async def ark_list_models(input: ArkListModelsInput, ctx: Context) -> ArkListMod
     `services` shows which optional services are enabled and the setting that enables a
     disabled one.
     """
-    settings = get_settings()
+    settings = get_runtime(ctx).settings
     models = [model for model in describe_models(settings) if input.kind in (None, model.kind)]
     book = get_price_book()
     if live_pricing_enabled(settings) and book.is_fresh():
@@ -251,7 +274,16 @@ def _image_info(caps: ImageCapabilities, settings: Settings) -> ModelInfo:
             output_formats=list(caps.supported_output_formats),
             supports_batch=caps.supports_batch,
             supported_sizes=list(caps.supported_sizes) if caps.supported_sizes else None,
+            custom_size_pixels_range=caps.custom_size_pixels_range,
+            custom_size_aspect_ratio_range=caps.custom_size_aspect_ratio_range,
+            background_modes=list(caps.background_modes),
+            prompt_optimization_modes=(
+                list(caps.prompt_optimization_modes) if caps.supports_prompt_optimization else []
+            ),
+            supports_safety_identifier=caps.supports_safety_identifier,
             supports_transparent_background=caps.supports_transparent_background,
+            supports_transparent_generation=caps.supports_transparent_generation,
+            supports_prompt_optimization=caps.supports_prompt_optimization,
         ),
     )
 
@@ -310,12 +342,6 @@ def describe_services(settings: Settings) -> list[ServiceStatus]:
     services = (
         ("modelark", settings.has_modelark, "Set BYTEPLUS_MODELARK_API_KEY."),
         (
-            "seedance_2_5_premium",
-            settings.has_seedance_2_5_premium,
-            "Set BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=true (whitelisted accounts only) "
-            "and BYTEPLUS_MODELARK_API_KEY.",
-        ),
-        (
             "seed3d",
             settings.has_seed3d,
             "Set BYTEPLUS_MODELARK_3D_ENABLED=true and BYTEPLUS_MODELARK_API_KEY.",
@@ -338,6 +364,13 @@ def describe_services(settings: Settings) -> list[ServiceStatus]:
             "asset_delete",
             settings.has_modelark_openapi and settings.modelark_assets_allow_delete,
             "Set BYTEPLUS_MODELARK_ASSETS_ALLOW_DELETE=true with the asset library configured.",
+        ),
+        (
+            "moderation",
+            settings.has_modelark_moderation,
+            "Set BYTEPLUS_MODELARK_MODERATION_ENABLED=true with BYTEPLUS_MODELARK_ACCESS_KEY "
+            "and BYTEPLUS_MODELARK_SECRET_KEY. Requires Advanced Creation Rights and whitelist "
+            "activation; configuration does not verify entitlement or shared HTTP access.",
         ),
     )
     return [

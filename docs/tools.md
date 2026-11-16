@@ -1,6 +1,6 @@
 # Tools Reference
 
-The server exposes a conditional set of typed tools. `seed_media_get_artifact`,
+The catalog contains 39 tools; the exposed set is conditional. `seed_media_get_artifact`,
 `seed_media_export_artifact`, and `seed_media_persist_url` are always
 available, provider tools are registered only when their credentials
 are configured, and `media_upload` and `media_presign` are registered when
@@ -8,6 +8,13 @@ object storage credentials (TOS or S3) are present. Each
 tool accepts a Pydantic input model and returns a Pydantic output model as
 structured content. All tools accept a `ctx: Context` parameter for progress
 reporting and logging.
+
+Hosted HTTP accepts only the shared MCP key. Scope checks below use the fixed
+ordinary team allowlist, not per-user grants. All members share tenant/principal
+`shared-team`, including task, artifact and upload ownership, budgets and
+cancellations. Account-wide asset and moderation administration is excluded
+even when provider gates register those tools; use trusted local stdio for it.
+See [Security](security.md#scope-taxonomy).
 
 ## Tool Contract for MCP Clients
 
@@ -85,6 +92,8 @@ Use foreground execution for quick status checks with persistence disabled.
 Use background execution when `persist_output=true` and a completed media file
 may need to be downloaded and copied into durable storage. Artifact reads,
 presigning, list operations, and cancel/delete operations remain foreground.
+`ark_moderation_get` is foreground-only and excluded from `ark_job_submit`
+and native task augmentation.
 
 ### Writing outputs to local paths
 
@@ -153,9 +162,9 @@ needs no scope.
     reasoning efforts, response formats. Both the default model for requests
     with audio and the default for requests without audio are marked
     `is_default`.
-- **`services`**: `modelark`, `seedance_2_5_premium`, `seed3d`, `seed_audio`,
+- **`services`**: `modelark`, `seed3d`, `seed_audio`,
   `speech_to_text`, `vod_mediakit`, `omnihuman`, `object_storage`,
-  `asset_library` and `asset_delete`, each with `enabled` and, when disabled,
+  `asset_library`, `asset_delete`, and `moderation`, each with `enabled` and, when disabled,
   a `reason` naming the setting to change (never a secret value).
 - **`models[].pricing`**: cached account catalog rates, or null for an uncached
   model. Each rate includes `charge_type`, `price`, `list_price`, and `unit`.
@@ -164,8 +173,10 @@ needs no scope.
   waits for a catalog request. The background refresher requires AK/SK and
   `BYTEPLUS_MODELARK_PRICING_REFRESH_SECONDS` greater than zero.
 
-Models are listed only when their service is enabled. The Seedance 2.5
-Premium binding exists only when its whitelist flag is on.
+Models are listed only when their service is enabled. Regular Seedance 2.5
+and Flash share the ModelArk service; discovery does not verify account entitlement.
+`moderation` reports its flag + AK/SK gate, not model coverage, whitelist
+activation or shared-key permission. See [moderation.md](moderation.md).
 
 The audio-model entry names `seed_audio_understand`, advertises only `audio`
 with an eight-clip limit, and uses the server-configured model without a
@@ -182,7 +193,7 @@ They do not make long operations synchronous: `ark_job_submit` validates the
 selected target, durably enqueues it on the same Docket worker used by native
 MCP tasks, and returns an Ark job ID. All four tools are always registered;
 capabilities include only provider tools enabled by configuration and permitted
-by the caller's JWT scopes.
+by the fixed shared-team scopes in `api_key` mode.
 
 ### ark_job_capabilities
 
@@ -283,7 +294,7 @@ generation or retrieval result returned an artifact with `id="provider-url"`
 and a `persistence_error`: the output was generated and billed, but could not
 be stored at the time. Call it before the provider URL expires (2 hours for
 audio, 24 hours for image, video, and 3D). Always registered; uses the
-`media:upload` JWT scope.
+`media:upload` scope in `api_key` mode.
 
 Only trusted BytePlus provider hosts are accepted. The URL goes through the
 same SSRF-resistant downloader, host allowlist, redirect re-validation, and
@@ -314,7 +325,7 @@ code and whether it is retryable.
 
 Enhance a public HTTPS source video through BytePlus VOD AI MediaKit. This
 tool is registered only when `BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses
-the `vod:enhance` JWT scope.
+the `vod:enhance` scope in `api_key` mode.
 
 **Annotations:** `readOnlyHint=False`, `destructiveHint=False`,
 `idempotentHint=False`, `openWorldHint=True`
@@ -354,7 +365,7 @@ is confirmed.
 
 Submit an asynchronous BytePlus VOD AI MediaKit video transcoding task. This
 tool is registered only when `BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses the
-`vod:transcode` JWT scope.
+`vod:transcode` scope in `api_key` mode.
 
 **Annotations:** `readOnlyHint=False`, `destructiveHint=False`,
 `idempotentHint=False`, `openWorldHint=True`
@@ -413,7 +424,7 @@ ambiguous completion.
 Burn subtitles into a public HTTPS video with MediaKit. Supply either
 `subtitle_url` for an SRT, VTT, or ASS file or a non-empty `subtitles` list of
 `subtitle_text`, `start_time`, and `end_time` cues. If both are supplied, the
-subtitle file takes priority. The tool uses `vod:subtitle:add` in JWT mode and
+subtitle file takes priority. The tool uses `vod:subtitle:add` in `api_key` mode and
 runs in the background; pass the `task_id` and `operation="add_subtitles"`
 from its background result to [`vod_get_task`](#vod_get_task).
 
@@ -447,8 +458,8 @@ background result to [`vod_get_task`](#vod_get_task).
 
 Submit an asynchronous BytePlus VOD AI MediaKit voice and background audio
 separation task (`POST /api/v1/tools/separate-voice`). This tool is registered
-when `BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses the `vod:extract` JWT
-scope.
+when `BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses the `vod:extract`
+scope in `api_key` mode.
 
 Input takes a public HTTPS `audio_url` or `video_url` (exactly one), a `scene`,
 and an `output_format`.
@@ -479,7 +490,7 @@ retried automatically (timeout/5xx means ambiguous completion).
 Poll the status and outputs of **any** BytePlus VOD AI MediaKit task: one
 poller for every `vod_*` create tool. Pass the `task_id` and the `operation`
 that the create tool returned. This tool is registered when
-`BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses the `vod:read` JWT scope.
+`BYTEPLUS_VOD_MEDIAKIT_API_KEY` is set and uses the `vod:read` scope in `api_key` mode.
 
 **Execution:** Optional background job. `persist_output` defaults to
 `false`, so a plain foreground call is a quick status poll; background
@@ -656,6 +667,30 @@ Seedream and Seed Audio reject `asset://` unless
 `BYTEPLUS_MODELARK_ASSET_REFERENCE_MODE=resolve` (experimental), which sends
 the asset's temporary download URL instead.
 
+## ark_moderation_get
+
+Retrieve provider-reported block reasons for one existing media record.
+Requires `BYTEPLUS_MODELARK_MODERATION_ENABLED=true` (default off) and complete
+ModelArk AK/SK. Account-wide trusted stdio/local-mode loopback only;
+`moderation:read` is excluded from shared-key HTTP. Call directly in the
+foreground, never through ordinary jobs or native tasks.
+
+**Annotations:** `readOnlyHint=True`, `destructiveHint=False`,
+`idempotentHint=True`, `openWorldHint=True`.
+
+| Input | Required | Description |
+|---|---|---|
+| `id` | Yes | Strict string; trimmed, 1-256 characters, no internal whitespace, controls or URI schemes; bare provider ID, not Ark job ID or `asset://` |
+| `type` | Yes | `task_id`, `asset_id` or `request_id`; regular Seedance 2.5 requires `task_id` |
+
+Extra input fields are rejected. Success returns `id`, `type`, and
+`block_reasons[]` (`label`, `sub_label`, nullable optional `detail`).
+Unknown categories are preserved; explanations are untrusted text.
+Errors are text-only tool results. Empty reasons or `NotFound.Id` never mean
+approval or safety. Ten lookups per rolling minute per runtime; no automatic
+retries or result persistence, and no zero-cost claim. Eligibility, unsupported
+coverage and live-unverified status: [moderation.md](moderation.md).
+
 ## seed_audio_generate
 
 Generate full-scene audio through Seed Speech: one clip, or up to 5
@@ -724,9 +759,10 @@ Three takes written to a local directory:
 ## seedream_generate_image
 
 **The only Seedream tool**: text-to-image, image-to-image and reference
-editing, point or box edits, editing PNGs while keeping their transparency, provider batches
+editing, point or box edits, transparent PNG generation (5.5), transparency-preserving
+edits (5.0 Pro), provider batches
 (`max_images`), and parallel variations. Registered when
-`BYTEPLUS_MODELARK_API_KEY` is set and uses the `seedream:generate` JWT scope.
+`BYTEPLUS_MODELARK_API_KEY` is set and uses the `seedream:generate` scope in `api_key` mode.
 
 **Execution:** Required background job. Submit it through `ark_job_submit` (or
 native task augmentation).
@@ -747,9 +783,16 @@ Built-in family limits (`ark_list_models` is authoritative for your server):
 
 | Family | Max reference images | `max_images` batch | `output_format` | `background="transparent"` |
 |---|---|---|---|---|
-| Seedream 5.0 Pro (default) | 10 | No (use `variations`) | `png`, `jpeg` | Yes |
+| Seedream 5.5 (default) | 10 | No (use `variations`) | `png` (default), `jpeg` | Text-only or reference-based generation |
+| Seedream 5.0 Pro | 10 | No (use `variations`) | `png`, `jpeg` | Existing transparent PNG only |
 | Seedream Lite | 14 | Yes | `png`, `jpeg` | No |
 | Seedream 4.x | 14 | Yes | `jpeg` | No |
+
+5.5's model ID is `dola-seedream-5-5-261028`; account authorization is required.
+Its `seed` compatibility field is not documented by the GA API; omit it unless
+provider acceptance has been verified. See the [contract notes](models.md#image-capabilities-imagecapabilities).
+Explicit existing defaults stay unchanged. See the
+[upgrade note](configuration.md#seedream-default-model-upgrade-note).
 
 ### Input
 
@@ -760,14 +803,15 @@ Built-in family limits (`ark_list_models` is authoritative for your server):
 | `point` | EditCoordinate | No | Edit mode: `{x, y}` in normalized `0..999` space on the **first** image. Requires `images` |
 | `bbox` | EditBbox | No | Edit mode: `{x1, y1, x2, y2}` in normalized `0..999` space (`x1 <= x2`, `y1 <= y2`) on the **first** image. Requires `images` |
 | `model` | string | No | Exact configured model ID; omit for the default |
-| `size` | string | No | Image dimensions (e.g. `"2048x2048"`); validated against the model |
+| `size` | string | No | 5.5: `1K`, `1.5K`, `2K` (default), or positive `WIDTHxHEIGHT` with 921600-4624220 pixels and width/height ratio 1/16-16, inclusive. `auto` is not a generation size. Older families remain provider-validated |
 | `seed` | integer | No | `-1` to `2147483647`. For a single call it is sent as is. **With `variations > 1` it is the base seed**: omitted lets the provider randomize each variation, `-1` picks a random seed per variation (recorded in `summary`), and `N` uses `N`, `N+1`, `N+2`, ... |
 | `max_images` | integer | No | Images from one provider call (1-15), batch-capable models only. **Cannot be combined with `variations > 1`** |
-| `output_format` | `"png"` \| `"jpeg"` | No | Output format; per-model set checked at runtime |
-| `response_format` | `"url"` \| `"b64_json"` | No | Provider response format |
+| `output_format` | `"png"` \| `"jpeg"` | No | Defaults to `png` on 5.5 and for transparent output; otherwise provider default |
+| `response_format` | `"url"` \| `"b64_json"` | No | Base64 requires `persist=true`; invalid combinations are rejected before submission, even for dry runs |
 | `watermark` | boolean | No | AIGC watermark |
-| `prompt_optimization` | `"standard"` \| `"fast"` | No | Prompt optimization mode; 5.0 Pro defaults to `SEEDREAM_PROMPT_OPTIMIZATION_MODE` (`standard`) |
-| `background` | `"opaque"` \| `"transparent"` | No | `transparent` edits an image and keeps its transparency. It needs a supported model (Seedream 5.0 Pro), **exactly one PNG input image that already has transparent pixels**, and `output_format` omitted or `png`. **It does not remove the background of an opaque image**: the provider rejects an input without transparent pixels (HTTP 400), and the server rejects a Base64 input whose `mime_type` is not `image/png` before calling the provider |
+| `prompt_optimization` | `"standard"` \| `"fast"` | No | 5.5: `standard` only (provider default); `fast` rejected. 5.0 Pro defaults to `SEEDREAM_PROMPT_OPTIMIZATION_MODE` (`standard`) |
+| `background` | `"auto"` \| `"opaque"` \| `"transparent"` | No | 5.5 defaults to `auto` (prompt decides; JPEG always opaque). `auto` is 5.5-only. `transparent` requires PNG output; 5.5 accepts text or references without alpha; Pro requires exactly one already-transparent PNG |
+| `safety_identifier` | string | No | 5.5/Pro: stable hashed end-user ID, 1-64 non-space printable ASCII characters. Never send raw personal data; redacted from previews and logs |
 | `variations` | integer | No | Independent generations to run in parallel (1-10, default 1); partial failures are reported per variation |
 | `variation_prompts` | list[string] | No | One prompt per variation, overriding `prompt`; must have exactly `variations` entries |
 | `persist` | boolean | No | Whether to persist output (default: true) |
@@ -776,6 +820,10 @@ Built-in family limits (`ark_list_models` is authoritative for your server):
 | `overwrite` | boolean | No | Allow `output_path` to replace an existing file (default: false) |
 
 \* Either `prompt` or `variation_prompts` must be provided.
+
+Unknown fields, including `layer_decomposition` and
+`layer_decomposition_options`, are rejected before job submission.
+Layer decomposition and rich-text OCR are not exposed.
 
 With `point` or `bbox`, the tool prepends coordinate markup to every prompt
 (`Image 1<bbox>x1 y1 x2 y2</bbox>` and/or `Image 1<point>x y</point>`), so
@@ -790,10 +838,20 @@ Returns `SeedreamGenerateOutput`:
 | `provider`, `model`, `created_at` | Provider (`byteplus-modelark`), model ID used, and ISO-8601 timestamp |
 | `dry_run` | `true` when nothing was generated; see `preview` |
 | `artifacts` | Images from a single call (`variations=1`); empty for variations and dry runs |
-| `item_errors` | Per-image errors from a single provider batch |
-| `usage` | Token usage of a single call; `null` for variations and dry runs |
+| `item_errors` | Single-call image errors: `NO_OUTPUT` for empty/missing output, `NO_DELIVERABLE_OUTPUT` for unexpected Base64-only output without persistence |
+| `usage` | Single-call usage, including provider-reported `input_images`, `generated_images`, `output_tokens`, and legacy token fields; `null` for variations and dry runs |
 | `summary` | `VariationSummary` when `variations > 1`: `total`, `succeeded`, `failed`, and per-variation `index`, `seed`, artifact or error |
-| `preview` | Dry run only: `requests` (provider bodies, one per variation, with reference image URLs reduced to scheme and host and inline Base64 to its size) and `estimated_cost_usd` (a static estimate, not a provider quote) |
+| `generations` | Completed calls ordered by `variation_index`, with `request_id`, submitted `seed`, final `prompt_sha256` and allowlisted `request_options`; per-call provider usage/identifier echo and `images` with artifact mapping, provider reports and independent `inspection`. Absent provider values stay null; empty for dry runs |
+| `preview` | Dry run only: redacted `requests`, `estimated_cost_usd` and `price_source` (`catalog`: fresh cached account image rate, `builtin`: fallback). Neither billing nor a provider quote; no pricing fetch |
+
+Image inspection reports decoded dimensions, format and actual alpha separately
+from provider claims: `verified`, `mismatch`, `invalid` or `unavailable`, or null
+for URL-only delivery. It retains billed artifacts without rerolls; verified
+bytes do not establish visual acceptance. A single-call seed of `-1` or null is
+provider randomness, not a recovered actual seed. Full contracts:
+[API reference](api-reference.md#3-seedream_generate_image),
+[image inspection](artifacts.md#seedream-image-inspection) and
+[bounded review/edit](integration-guide.md#seedream-review-and-edit).
 
 A storage failure does not fail the call. Each image degrades on its own:
 URL outputs come back as `id="provider-url"` references to the temporary
@@ -819,7 +877,21 @@ Box edit of the first image:
 }
 ```
 
-Edit an image with transparency on Seedream 5.0 Pro (the input PNG must
+Generate a transparent PNG from text with Seedream 5.5 (`arguments.input`):
+
+```json
+{
+  "model": "dola-seedream-5-5-261028",
+  "prompt": "Realistic embroidered heart and daisy stickers, cream stitched borders, transparent background",
+  "size": "2K",
+  "response_format": "url",
+  "output_format": "png",
+  "background": "transparent",
+  "watermark": true
+}
+```
+
+Edit an image with transparency on Seedream 5.0 Pro (bind/select Pro; the input PNG must
 already have transparent pixels):
 
 ```json
@@ -852,10 +924,10 @@ Drop `dry_run` (and add `output_path` ending in `/` on stdio) to generate.
 ## seedance_create_task
 
 **One tool for every Seedance model**: 2.0 (and its Fast and Mini variants),
-2.5, and the whitelist-only 2.5 Premium. Pick the model with `model`; set
+2.5, and 2.5 Flash. Pick the model with `model`; set
 `variations` to create several tasks in parallel; set `dry_run` to preview the
 request and its cost without billing. Registered when
-`BYTEPLUS_MODELARK_API_KEY` is set and uses the `seedance:create` JWT scope.
+`BYTEPLUS_MODELARK_API_KEY` is set and uses the `seedance:create` scope in `api_key` mode.
 
 **Execution:** Required background job. Submit it through `ark_job_submit` (or
 native task augmentation); a dry run finishes on the first `ark_job_get`. Poll
@@ -870,9 +942,13 @@ resubmit the create tool to poll**: each call starts new billed tasks.
 - **`model` takes an exact configured ID** from `ark_list_models(kind='video')`,
   which also lists each model's limits. Omit it to use `SEEDANCE_DEFAULT_MODEL`
   (default `dreamina-seedance-2-5-260628`, Seedance 2.5).
-- **Premium is just a model ID** (`dreamina-seedance-2-5-premium-260915` by
-  default). It is configured only when
-  `BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED=true`.
+- **4K is a resolution, not a separate model.** Set `resolution="4k"` on
+  `dreamina-seedance-2-5-260628` or a configured 2.5 endpoint. This is retained
+  server acceptance; current model-specific provider docs do not list regular
+  2.5 4K. See the [contract caveat](models.md#video-capabilities-videocapabilities).
+- **Flash** uses `dreamina-seedance-2-5-flash-261115` with family
+  `seedance_2_5_flash`: 480p/720p and no Draft mode. It is added automatically
+  when bindings are empty; explicit binding lists must include it themselves.
 - **The input schema advertises the widest limits; the model's own limits are
   checked at runtime.** Every violation (resolution, ratio, duration, reference
   counts, priority and expiry ranges, Draft, audio-only input, task type,
@@ -886,8 +962,12 @@ server has configured):
 |---|---|---|---|---|---|---|---|
 | Seedance 2.0 | 480p, 720p, 1080p, 4k | 4-15 | 9 / 3 / 3 | No | No | No | No |
 | Seedance 2.0 Fast, 2.0 Mini | 480p, 720p | 4-15 | 9 / 3 / 3 | No | No | No | No |
-| Seedance 2.5 | 480p, 720p, 1080p | 4-30 | 30 / 10 / 10 | Yes (1080p) | Yes | `auto`, `reference`, `edit`, `extend` | `mp4`, `mov` |
-| Seedance 2.5 Premium (whitelist, flag-gated) | 480p, 720p, 1080p, 4k | 4-30 | 30 / 10 / 10 | Yes (4k) | Yes | `auto`, `reference`, `edit`, `extend` | `mp4`, `mov` |
+| Seedance 2.5 | 480p, 720p, 1080p, 4k | 4-30 | 30 / 10 / 10 | Yes (1080p) | Yes | `auto`, `reference`, `edit`, `extend` | `mp4`, `mov` |
+| Seedance 2.5 Flash | 480p, 720p | 4-30 | 10 / 5 / 5 | No | Yes | `auto`, `reference`, `edit`, `extend` | `mp4`, `mov` |
+
+Static video cost estimates are not provider quotes and do not account for
+resolution or duration, including 4K. Flash reuses the static 2.5 per-task
+fallback; it is not a quote derived from the provider's token prices.
 
 ### Input
 
@@ -909,7 +989,7 @@ server has configured):
 | `execution_expires_after` | integer | No | Seconds before an unfinished task expires (3600-259200) |
 | `priority` | integer | No | Priority (0-9) |
 | `safety_identifier` | string | No | Safety identifier (max 64 chars) |
-| `draft` | boolean | No | Draft mode step 1 (Seedance 2.5 models): a 480p preview. Mutually exclusive with `draft_task_id`. See [Draft mode](#draft-mode) |
+| `draft` | boolean | No | Draft mode step 1 (regular Seedance 2.5 only, not Flash): a 480p preview. Mutually exclusive with `draft_task_id`. See [Draft mode](#draft-mode) |
 | `draft_task_id` | string | No | Draft mode step 2: render a succeeded Draft task as the final video. Requires `variations=1` |
 | `variations` | integer | No | Tasks to create in parallel (1-5, default 1). **Each variation is a separate billed task**; partial failures are reported per variation |
 | `variation_prompts` | list[string] | No | One prompt per variation (each 1-32,000 chars), overriding `prompt`; must have exactly `variations` entries |
@@ -940,7 +1020,7 @@ certain parameters are auto-derived from the input media:
 ### Draft mode
 
 Draft mode is a two-step flow for checking a video cheaply before paying for
-the final render. Seedance 2.5 and 2.5 Premium support it; Seedance 2.0 models
+the final render. Regular Seedance 2.5 supports it; Flash and Seedance 2.0 models
 do not.
 
 1. Call `seedance_create_task` with `draft: true` and the usual prompt and
@@ -953,17 +1033,17 @@ do not.
    `generate_audio`, and `omni_reference_task_type`, so those fields (and
    `draft`, even `false`) must be omitted; the provider rejects them even when
    they match. `resolution` may only be omitted or the model's Draft final
-   resolution, which is also the default: `1080p` on Seedance 2.5 and `4k` on
-   Seedance 2.5 Premium. The Premium `4k` final is this server's rule, not
-   stated in the public guide; revisit it if the provider differs.
+   resolution, which is also the default: `1080p` on Seedance 2.5.
+   Ordinary generation supports 4K, but Draft promotion remains 1080p.
    `return_last_frame`, `watermark`, `execution_expires_after`, `priority`,
    `safety_identifier`, and `output_format` can be set again; omitted values
    use the model defaults, not the Draft's values. The final video is billed
    separately at its resolution.
 
 Before submitting step 2, the tool checks that the caller owns the Draft task,
-that it succeeded, that it was created in Draft mode, and that it is at most
-7 days old. If `model` is omitted, the tool uses the Draft task's model; a
+that it succeeded, that it was created in Draft mode, and that it is within
+**14 days of creation** (**7 days** if created before **2026-10-28 10:00 UTC+8**).
+If `model` is omitted, the tool uses the Draft task's model; a
 different `model` is rejected.
 
 ### Output
@@ -991,6 +1071,32 @@ Single Seedance 2.5 task (default model):
   "duration": 8
 }
 ```
+
+Flash multimodal reference generation (the `arguments.input` of
+`ark_job_submit`, with `tool_name="seedance_create_task"`):
+
+```json
+{
+  "model": "dreamina-seedance-2-5-flash-261115",
+  "prompt": "Use Video 1 POV and Audio 1 as music for a fruit tea promotional ad.",
+  "images": [
+    "https://ark-doc.tos-ap-southeast-1.bytepluses.com/doc_image/r2v_tea_pic1.jpg",
+    "https://ark-doc.tos-ap-southeast-1.bytepluses.com/doc_image/r2v_tea_pic2.jpg"
+  ],
+  "videos": ["https://ark-doc.tos-ap-southeast-1.bytepluses.com/doc_video/r2v_tea_video1.mp4"],
+  "audios": ["https://ark-doc.tos-ap-southeast-1.bytepluses.com/doc_audio/r2v_tea_audio1.mp3"],
+  "resolution": "720p",
+  "generate_audio": true,
+  "ratio": "16:9",
+  "duration": 11,
+  "watermark": false,
+  "dry_run": true
+}
+```
+
+Plain image URLs use `reference_image`, so the explicit 16:9 ratio is valid.
+Remove `dry_run` only when ready to submit a billed task. Discovery does not
+verify account activation.
 
 Three variations on an explicit model, submitted as a background job:
 
@@ -1029,9 +1135,9 @@ Draft step 2 (render the final video from a succeeded Draft):
 ## gen_task_get
 
 Check the status and outputs of **any** ModelArk generation task: Seedance
-video (2.0, 2.5, and 2.5 Premium), Hyper3D, and Hitem3d. Pass every task ID you
+video (2.0, regular 2.5, and 2.5 Flash), Hyper3D, and Hitem3d. Pass every task ID you
 are waiting on in one call. Registered when `BYTEPLUS_MODELARK_API_KEY` is set
-(not gated by the 3D flag) and uses the `gen:read` JWT scope.
+(not gated by the 3D flag) and uses the `gen:read` scope in `api_key` mode.
 
 The server makes one provider list call per page of 20 task IDs (at most
 three), filtered by the requested IDs, and re-fetches individually only the
@@ -1080,7 +1186,7 @@ Each `GenTask` contains:
 | `outputs` | List of `TaskOutputFile`: roles `video` and `last_frame` for video tasks, `model_file` for 3D tasks. Empty until the task succeeds |
 | `error` | Provider failure `code` and `message` when failed |
 | `usage` | Token usage reported by the provider |
-| `draft` | `true` for a Seedance Draft task (480p preview); pass `task_id` as `draft_task_id` within 7 days. `null` for 3D |
+| `draft` | `true` for a Seedance Draft task (480p preview); pass `task_id` as `draft_task_id` within 14 days of creation (7 if created before 2026-10-28 10:00 UTC+8). `null` for 3D |
 | `settings` | Video generation settings echoed by the provider; `null` for 3D |
 | `queue` | Server-derived queue timing for a queued or running video task (below); `null` once finished and for 3D |
 
@@ -1150,7 +1256,7 @@ them locally) through a background job:
 
 List your ModelArk generation tasks (Seedance video and 3D), **newest first**,
 from the last 7 days (the provider's list window). Registered when
-`BYTEPLUS_MODELARK_API_KEY` is set and uses the `gen:read` JWT scope. Use
+`BYTEPLUS_MODELARK_API_KEY` is set and uses the `gen:read` scope in `api_key` mode. Use
 `gen_task_get` for outputs.
 
 **Annotations:** `readOnlyHint=True`, `destructiveHint=False`,
@@ -1188,7 +1294,7 @@ listed.
 
 Cancel (queued) or delete (terminal) any ModelArk generation task: Seedance,
 Hyper3D, or Hitem3d. Registered when `BYTEPLUS_MODELARK_API_KEY` is set and
-uses the `gen:delete` JWT scope. A deleted task's outputs are no longer
+uses the `gen:delete` scope in `api_key` mode. A deleted task's outputs are no longer
 retrievable through `gen_task_get`.
 
 **Annotations:** `readOnlyHint=False`, `destructiveHint=True`,
@@ -1551,7 +1657,7 @@ optional `log_id`.
 
 Upload 1-50 image, audio, or video files to object storage (TOS or S3) and
 receive a presigned HTTPS URL for each. Registered with object storage and
-uses the `media:upload` JWT scope.
+uses the `media:upload` scope in `api_key` mode.
 
 **Execution:** Required background job (use `ark_job_submit`), because one
 item can hold up to 200 MiB of video.
@@ -1620,7 +1726,7 @@ without failing the call, so always check `failed` and `items[].error`.
 Generate fresh presigned HTTPS GET URLs for 1-100 existing objects without
 re-uploading. Use it when a previously uploaded reference's URL has expired
 or is about to expire. Registered with object storage and uses the
-`media:presign` JWT scope.
+`media:presign` scope in `api_key` mode.
 
 **Annotations:** `readOnlyHint=True`, `destructiveHint=False`,
 `idempotentHint=True`, `openWorldHint=False`

@@ -20,10 +20,19 @@ separate tools. The flow is discovery → create → poll:
   transparent background, variations, dry run).
 - **Seedance** — asynchronous video generation through ModelArk with one
   create tool, `seedance_create_task`. Supports two model generations: 2.0
-  (legacy, 15s, 4K) and 2.5 (default, 30s, 1080p, structured editing, native
-  extension). Seedance 2.5 Premium (`dreamina-seedance-2-5-premium-260915`,
-  adds 4K) is a whitelist-only model selected through `model`, gated by
-  `BYTEPLUS_MODELARK_SEEDANCE_2_5_PREMIUM_ENABLED`; disabled by default.
+  (legacy, 15s, 4K) and 2.5 (default, 30s, 4K, structured editing, native
+  extension). Seedance 2.5 uses `dreamina-seedance-2-5-260628` for all supported
+  resolutions, including `resolution="4k"`; no separate model or feature gate.
+  Seedance 2.5 Flash (`dreamina-seedance-2-5-flash-261115`, family
+  `seedance_2_5_flash`) uses the same tool, supports 480p/720p and 4-30s with
+  reference/edit/extend features and 10 images / 5 videos / 5 audios, but no
+  Draft mode. Regular 2.5 Drafts have a 14-day window for creation at or after
+  2026-10-28 10:00 UTC+8; earlier Drafts retain seven days. Authenticated HTTP
+  with regular 2.5 enabled requires `STATE_PRUNE_MAX_AGE_DAYS >= 14`. Empty bindings
+  add Flash alongside the selected default; explicit binding lists remain
+  authoritative. Regular 2.5 remains the default. Retained regular 2.5 4K
+  acceptance differs from current model-specific provider docs; see
+  `docs/models.md` for the contract caveat.
 - **Seed 3D** — asynchronous 3D model generation through ModelArk (Hyper3D
   text-to-3D and Hitem3d image-to-3D). Gated by `BYTEPLUS_MODELARK_3D_ENABLED`;
   disabled by default.
@@ -54,6 +63,15 @@ separate tools. The flow is discovery → create → poll:
   registered only when `BYTEPLUS_MODELARK_ACCESS_KEY` and
   `BYTEPLUS_MODELARK_SECRET_KEY` are set. Seedance accepts `asset://<id>`
   references natively.
+- **Moderation lookup** — `ark_moderation_get` retrieves existing blocked-record
+  reasons through signed ModelArk OpenAPI. Default-off
+  `BYTEPLUS_MODELARK_MODERATION_ENABLED` + complete AK/SK; foreground-only,
+  account-wide trusted stdio/local-mode loopback access. `moderation:read` is
+  not granted to shared-key HTTP. Ten lookups per rolling minute per runtime,
+  no automatic retries or result persistence; empty/not-found is not approval.
+  Eligibility and live-unverified status: `docs/moderation.md` and
+  `specs/SPEC_MODELARK_MODERATION_CONTRACT.md`. The catalog contains 39 tools;
+  `ark_list_models.services` includes configuration-only `moderation`.
 - **Background jobs** — ordinary `ark_job_*` tools are the default route for
   long-running work through the FastMCP worker, since most clients cannot
   negotiate MCP task augmentation; native tasks remain supported for clients
@@ -61,13 +79,20 @@ separate tools. The flow is discovery → create → poll:
 - **Durable artifacts** — MCP resources for generated media whose provider URLs
   expire (2h for audio, 24h for image/video/3D).
 - **Transports** — local `stdio` first, with protected Streamable HTTP as a
-  deployable option (both natively supported by FastMCP).
+  deployable option (both natively supported by FastMCP). Hosted HTTP uses only
+  `MCP_AUTH_MODE=api_key` with `MCP_API_KEY_SHA256`, never the raw key.
+  All holders use fixed tenant/principal `shared-team`, one budget and one
+  ownership boundary; fixed ordinary scopes exclude assets/moderation admin.
+  Python defaults to `local` (stdio/loopback only); Docker, Compose and Terraform
+  default to `api_key`. Generic bearer claims remain internal for ownership
+  tests, with the tenant claim key fixed to `tenant_id`. See
+  `docs/self-hosting.md` for generation and rotation.
 
 Seedance, Seedream, Seed 3D, Seed 2.1 Understanding, and Seed Audio
 Understanding share the ModelArk data-plane host and Bearer authentication.
 Seed Audio and Speech-to-Text are
 hosted by Seed Speech and use `X-Api-Key`. VOD AI MediaKit uses a separate
-Bearer key. The asset library uses BytePlus IAM AK/SK with OpenAPI V4
+Bearer key. The asset library and moderation lookup use BytePlus IAM AK/SK with OpenAPI V4
 signatures. The server uses three provider gateways behind one normalized
 domain layer. See `plans/PLAN_ARK_SEED_MULTIMODAL_MCP.md` for the full
 design.
@@ -199,6 +224,9 @@ troubleshoot the server.
   dates. Prefer official BytePlus and Model Context Protocol sources.
 - **Secrets.** Never commit credentials, API keys, or provider response
   fixtures containing real media. Redact before saving examples.
+- **Moderation publication.** Public publication of the minimal integration
+  contract is explicitly approved; exclude private Lark URLs, restricted source
+  text, real fixtures and screenshots. Use synthetic samples only.
 
 ## Repository Hygiene
 

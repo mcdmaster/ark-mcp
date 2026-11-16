@@ -53,9 +53,12 @@ or authorized in the console.
 | `ark_asset_verification_result` | `GetVisualValidateResult` | Returns the verified person's `LivenessFace` `group_id`; `wait_seconds` polls. Background-job capable. |
 | `ark_asset_delete` | `DeleteAsset` / `DeleteAssetGroup` | **Irreversible.** Exactly one of `asset_id` or `group_id`, and `confirm: true`. Registered only with `BYTEPLUS_MODELARK_ASSETS_ALLOW_DELETE=true`. Deleting a group also removes its assets, so **a non-empty group is refused unless `cascade: true`**. Returns `id`, `kind` (`asset` or `group`), and `deleted`. |
 
-JWT scopes: `assets:read`, `assets:write`, `assets:verify`, `assets:delete`.
 Asset management acts on the whole BytePlus account, not per MCP principal, so
-grant these scopes only to trusted callers.
+the shared HTTP key excludes all asset scopes (`assets:read`, `assets:write`,
+`assets:verify`, `assets:delete`). These management workflows require trusted
+local access with AK/SK; registering the tools does not grant shared-key users
+access. Existing authorized `asset://` references still work for Seedance
+generation over HTTP.
 
 `subject` lookup and creation is serialized within one server event loop. If
 separate stdio servers or replicas may create the same subject concurrently,
@@ -69,6 +72,18 @@ spacing, and verification polling therefore never block a Seedance asset
 preflight running at the same time.
 
 ## Workflows
+
+### Inspect an existing content block
+
+For an eligible already-blocked material asset, call `ark_moderation_get`
+directly with `{"input":{"id":"synthetic-asset-id","type":"asset_id"}}`;
+use a bare ID, not `asset://`. This separate default-off feature requires
+AK/SK, `BYTEPLUS_MODELARK_MODERATION_ENABLED=true`, Advanced Creation Rights,
+whitelist activation and IAM `GetModerationResult`. It is account-wide trusted
+stdio/local-mode loopback only, never shared-key HTTP or background execution.
+Records must be within fourteen days and created after whitelist activation.
+Lookup does not alter moderation, make an asset Active, or prove safety;
+live success remains unverified. See [moderation.md](moderation.md) for bounds.
 
 ### Virtual character → Seedance
 
