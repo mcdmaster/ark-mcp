@@ -23,12 +23,13 @@ from ark_mcp.server import create_server
 @pytest.fixture
 def configured_server(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Set test env vars and re-register tools with fake credentials."""
     monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test")
     monkeypatch.setenv("BYTEPLUS_SEED_SPEECH_API_KEY", "sk-test")
-    monkeypatch.setenv("BYTEPLUS_VOD_MEDIAKIT_API_KEY", "test-mediakit-key")
-    monkeypatch.setenv("BYTEPLUS_MODELARK_3D_ENABLED", "false")
+    if hasattr(request, "param"):
+        monkeypatch.setenv("BYTEPLUS_MODELARK_3D_ENABLED", request.param)
     monkeypatch.setenv("TOS_ACCESS_KEY", "ak-test-tos")
     monkeypatch.setenv("TOS_SECRET_KEY", "sk-test-tos")
     monkeypatch.setenv("TOS_BUCKET", "test-bucket")
@@ -63,7 +64,6 @@ def no_creds_server(
                 _env_file=None,
                 BYTEPLUS_MODELARK_API_KEY="",
                 BYTEPLUS_SEED_SPEECH_API_KEY="",
-                BYTEPLUS_VOD_MEDIAKIT_API_KEY="",
             )
         )
     )
@@ -90,26 +90,12 @@ def s3_only_server(
     get_settings.cache_clear()
 
 
-@pytest.fixture
-def seed3d_server(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test")
-    monkeypatch.setenv("BYTEPLUS_MODELARK_3D_ENABLED", "true")
-
-    get_settings.cache_clear()
-
-    yield SimpleNamespace(mcp=create_server(get_settings()))
-
-    get_settings.cache_clear()
-
-
 class TestToolDiscovery:
     """Verify configured tools are discoverable when credentials are set."""
 
+    @pytest.mark.parametrize("configured_server", ["true"], indirect=True)
     async def test_all_tools_registered(self, configured_server: None) -> None:
-        server = configured_server
-        tools = await server.mcp.list_tools()
+        tools = await configured_server.mcp.list_tools()
         tool_names = {t.name for t in tools}
         assert tool_names == {
             "ark_job_cancel",
@@ -118,6 +104,7 @@ class TestToolDiscovery:
             "ark_job_submit",
             "ark_list_models",
             "seed_audio_generate",
+            "seed_tts_generate",
             "seed_media_export_artifact",
             "seed_media_get_artifact",
             "seed_media_persist_url",
@@ -131,12 +118,6 @@ class TestToolDiscovery:
             "speech_to_text",
             "media_upload",
             "media_presign",
-            "vod_enhance_video",
-            "vod_transcode_video",
-            "vod_separate_audio",
-            "vod_add_subtitles",
-            "vod_remove_subtitles",
-            "vod_get_task",
             "ark_asset_group_ensure",
             "ark_asset_group_list",
             "ark_asset_create",
@@ -145,6 +126,23 @@ class TestToolDiscovery:
             "ark_asset_verification_start",
             "ark_asset_verification_result",
         }
+
+    @pytest.mark.parametrize("speech_key", ["", "sk-test"])
+    @pytest.mark.parametrize("modelark_key", ["", "sk-test"])
+    async def test_seed_tts_uses_seed_audio_registration_gate(
+        self, speech_key: str, modelark_key: str
+    ) -> None:
+        server = create_server(
+            Settings(
+                _env_file=None,
+                BYTEPLUS_MODELARK_API_KEY=modelark_key,
+                BYTEPLUS_SEED_SPEECH_API_KEY=speech_key,
+            )
+        )
+        names = {tool.name for tool in await server.list_tools()}
+
+        assert ("seed_audio_generate" in names) is bool(speech_key)
+        assert ("seed_tts_generate" in names) is bool(speech_key)
 
     async def test_asset_tools_require_openapi_credentials(
         self, monkeypatch: pytest.MonkeyPatch
@@ -206,16 +204,12 @@ class TestToolDiscovery:
         required_task_names = {
             "media_upload",
             "seed_audio_generate",
+            "seed_tts_generate",
             "speech_to_text",
             "seed_understand",
             "seed_audio_understand",
             "seedream_generate_image",
             "seedance_create_task",
-            "vod_enhance_video",
-            "vod_transcode_video",
-            "vod_separate_audio",
-            "vod_add_subtitles",
-            "vod_remove_subtitles",
         }
         assert required_task_names <= tools_by_name.keys()
 
@@ -233,7 +227,7 @@ class TestToolDiscovery:
         server = configured_server
         tools = await server.mcp.list_tools()
         tools_by_name = {tool.name: tool for tool in tools}
-        optional_task_names = {"gen_task_get", "vod_get_task"}
+        optional_task_names = {"gen_task_get", "seed_media_persist_url"}
         assert optional_task_names <= tools_by_name.keys()
 
         for name in optional_task_names:
@@ -280,38 +274,16 @@ class TestToolDiscovery:
         assert tool.task_config.mode == "required"
         assert '"4k"' in json.dumps(tool.parameters)
 
-    async def test_seed3d_create_and_retrieval_task_modes(self, seed3d_server: None) -> None:
-        tools = await seed3d_server.mcp.list_tools()
-        tools_by_name = {tool.name: tool for tool in tools}
-
-        for name in {"hyper3d_create_task", "hitem3d_create_task"}:
-            tool = tools_by_name[name]
-            assert tool.task_config.mode == "required"
-            assert tool.task_config.poll_interval == timedelta(seconds=2)
-
-        assert tools_by_name["gen_task_get"].task_config.mode == "optional"
-        for name in {"gen_task_list", "gen_task_cancel_or_delete"}:
-            assert tools_by_name[name].task_config.mode == "forbidden"
-        removed = {
-            "hyper3d_get_task",
-            "hitem3d_get_task",
-            "hyper3d_list_tasks",
-            "hitem3d_list_tasks",
-        }
-        assert not removed & tools_by_name.keys()
-
     async def test_compatibility_registry_covers_all_task_enabled_tools(
         self,
         configured_server: None,
-        seed3d_server: None,
         omnihuman_server: None,
     ) -> None:
         configured_tools = await configured_server.mcp.list_tools()
-        seed3d_tools = await seed3d_server.mcp.list_tools()
         omnihuman_tools = await omnihuman_server.mcp.list_tools()
         task_enabled_names = {
             tool.name
-            for tool in [*configured_tools, *seed3d_tools, *omnihuman_tools]
+            for tool in [*configured_tools, *omnihuman_tools]
             if tool.task_config.mode in {"required", "optional"}
         }
 
@@ -348,13 +320,6 @@ class TestToolDiscovery:
                 for property_schema in model_schema["properties"].values()
             )
 
-    async def test_vod_mediakit_tool_not_registered_without_its_key(
-        self, no_creds_server: None
-    ) -> None:
-        tools = await no_creds_server.mcp.list_tools()
-        names = {tool.name for tool in tools}
-        assert not {name for name in names if name.startswith("vod_")}
-
     async def test_media_upload_registered_with_s3_only(self, s3_only_server: None) -> None:
         server = s3_only_server
         tools = await server.mcp.list_tools()
@@ -366,10 +331,11 @@ class TestToolDiscovery:
 class TestToolAnnotations:
     """Verify ToolAnnotations are correctly propagated."""
 
-    async def test_seed_audio_annotations(self, configured_server: None) -> None:
+    @pytest.mark.parametrize("tool_name", ["seed_audio_generate", "seed_tts_generate"])
+    async def test_seed_audio_annotations(self, configured_server: None, tool_name: str) -> None:
         server = configured_server
         tools = await server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "seed_audio_generate")
+        tool = next(t for t in tools if t.name == tool_name)
         assert tool.annotations is not None
         assert tool.annotations.read_only_hint is False
         assert tool.annotations.destructive_hint is False
@@ -413,42 +379,6 @@ class TestToolAnnotations:
         assert tool.annotations.destructive_hint is True
         assert tool.annotations.read_only_hint is False
 
-    async def test_vod_enhance_annotations(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_enhance_video")
-        assert tool.annotations is not None
-        assert tool.annotations.read_only_hint is False
-        assert tool.annotations.destructive_hint is False
-        assert tool.annotations.idempotent_hint is False
-        assert tool.annotations.open_world_hint is True
-
-    async def test_vod_transcode_submit_annotations(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_transcode_video")
-        assert tool.annotations is not None
-        assert tool.annotations.read_only_hint is False
-        assert tool.annotations.destructive_hint is False
-        assert tool.annotations.idempotent_hint is False
-        assert tool.annotations.open_world_hint is True
-
-    async def test_vod_get_task_annotations(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_get_task")
-        assert tool.annotations is not None
-        assert tool.annotations.read_only_hint is False  # output_path can write local files
-        assert tool.annotations.destructive_hint is False
-        assert tool.annotations.idempotent_hint is True
-        assert tool.annotations.open_world_hint is False
-
-    async def test_vod_separate_audio_annotations(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_separate_audio")
-        assert tool.annotations is not None
-        assert tool.annotations.read_only_hint is False
-        assert tool.annotations.destructive_hint is False
-        assert tool.annotations.idempotent_hint is False
-        assert tool.annotations.open_world_hint is True
-
 
 class TestInputSchemas:
     """Verify inputSchema is auto-generated for each tool."""
@@ -462,6 +392,65 @@ class TestInputSchemas:
         assert "properties" in schema
         assert "text_prompt" in schema["properties"]["input"]["properties"]
         assert "required" not in schema["properties"]["input"]
+
+    async def test_seed_tts_input_schema(self, configured_server: None) -> None:
+        tools = await configured_server.mcp.list_tools()
+        tool = next(t for t in tools if t.name == "seed_tts_generate")
+        schema = tool.parameters
+        input_schema = schema["properties"]["input"]
+        input_props = input_schema["properties"]
+
+        assert set(input_schema["required"]) == {"voice_id"}
+        assert set(input_props) == {
+            "text",
+            "ssml",
+            "voice_id",
+            "model",
+            "output_format",
+            "voice_settings",
+            "language_code",
+            "enable_subtitle",
+            "pronunciation_dictionary",
+            "session_id",
+            "text_normalization",
+            "enable_markdown_filter",
+            "silence_duration",
+            "output_path",
+            "overwrite",
+        }
+        assert input_props["model"]["const"] == "dola-seed-tts-3.0"
+        assert input_props["language_code"]["default"] == "auto"
+        assert input_props["enable_subtitle"]["default"] is False
+        assert input_props["pronunciation_dictionary"]["default"] is None
+        assert input_props["text_normalization"]["default"] is True
+        assert input_props["enable_markdown_filter"]["default"] is False
+        assert input_props["silence_duration"]["minimum"] == 0
+        assert input_props["silence_duration"]["maximum"] == 30_000
+        assert all(field.get("description") for field in input_props.values())
+
+        nested_properties = {}
+        for name, expected in {
+            "output_format": {"format", "sample_rate", "bit_rate"},
+            "voice_settings": {"speed", "volume", "pitch", "instructions", "similarity_boost"},
+            "pronunciation_dictionary": {"tone"},
+        }.items():
+            nested_schema = input_props[name]
+            if "anyOf" in nested_schema:
+                nested_schema = next(
+                    branch for branch in nested_schema["anyOf"] if branch.get("type") != "null"
+                )
+            if reference := nested_schema.get("$ref"):
+                nested_schema = schema["$defs"][reference.rsplit("/", 1)[-1]]
+            nested_properties[name] = nested_schema["properties"]
+            assert set(nested_properties[name]) == expected
+            assert all(field.get("description") for field in nested_properties[name].values())
+
+        audio_format = nested_properties["output_format"]["format"]
+        assert set(audio_format["enum"]) == {"mp3", "pcm", "ogg_opus"}
+        assert audio_format["default"] == "mp3"
+        tone = nested_properties["pronunciation_dictionary"]["tone"]
+        assert tone["maxItems"] == 100
+        assert tone["items"]["maxLength"] == 1000
 
     async def test_seedream_input_schema(self, configured_server: None) -> None:
         tools = await configured_server.mcp.list_tools()
@@ -501,80 +490,19 @@ class TestInputSchemas:
         input_props = schema["properties"]["input"]["properties"]
         assert {"task_id", "mode", "expected_status", "confirm"} <= input_props.keys()
 
-    async def test_vod_enhance_schema_is_self_describing(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_enhance_video")
-        assert tool.description is not None
-        assert "accepted result carries a task_id" in tool.description
-        assert "vod_get_task" in tool.description
-        assert "always returned" not in tool.description
-        input_schema = tool.parameters["properties"]["input"]
-        assert input_schema["required"] == ["video_url"]
-        assert all("description" in field for field in input_schema["properties"].values())
-        assert tool.output_schema is not None
-        task_description = tool.output_schema["properties"]["task_id"]["description"]
-        assert "vod_get_task" in task_description
-        assert "synchronous result" not in task_description
-        assert all(
-            "description" in field or "$ref" in field
-            for field in tool.output_schema["properties"].values()
-        )
-
-    async def test_vod_get_task_schema_is_self_describing(self, configured_server: None) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_get_task")
-        assert tool.description is not None
-        input_schema = tool.parameters["properties"]["input"]
-        assert set(input_schema["required"]) == {"task_id", "operation"}
-        assert all("description" in field for field in input_schema["properties"].values())
-        assert tool.output_schema is not None
-        assert tool.output_schema["properties"]["status"]["description"]
-        assert all(
-            "description" in field or "$ref" in field
-            for field in tool.output_schema["properties"].values()
-        )
-
-    async def test_vod_transcode_submit_schema_is_self_describing(
-        self, configured_server: None
-    ) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_transcode_video")
-        assert tool.description is not None
-        assert "vod_get_task" in tool.description
-        input_schema = tool.parameters["properties"]["input"]
-        assert input_schema["required"] == ["video_url"]
-        assert all("description" in field for field in input_schema["properties"].values())
-        assert tool.output_schema is not None
-        assert tool.output_schema["properties"]["task_id"]["description"]
-        assert all(
-            "description" in field or "$ref" in field
-            for field in tool.output_schema["properties"].values()
-        )
-
-    async def test_vod_separate_audio_schema_is_self_describing(
-        self, configured_server: None
-    ) -> None:
-        tools = await configured_server.mcp.list_tools()
-        tool = next(t for t in tools if t.name == "vod_separate_audio")
-        assert tool.description is not None
-        assert "vod_get_task" in tool.description
-        input_schema = tool.parameters["properties"]["input"]
-        assert "audio_url" in input_schema["properties"]
-        assert "video_url" in input_schema["properties"]
-        assert "scene" in input_schema["properties"]
-        assert "output_format" in input_schema["properties"]
-        assert "required" not in input_schema
-        assert all("description" in field for field in input_schema["properties"].values())
-        assert tool.output_schema is not None
-        assert tool.output_schema["properties"]["task_id"]["description"]
-        assert all(
-            "description" in field or "$ref" in field
-            for field in tool.output_schema["properties"].values()
-        )
-
 
 class TestOutputSchemas:
     """Verify outputSchema is auto-generated for each tool."""
+
+    async def test_seed_tts_output_schema(self, configured_server: None) -> None:
+        tools = await configured_server.mcp.list_tools()
+        tool = next(t for t in tools if t.name == "seed_tts_generate")
+        schema = tool.output_schema
+
+        assert schema is not None
+        assert schema["title"] == "SeedTtsGenerateOutput"
+        assert "artifact" in schema["properties"]
+        assert all(field.get("description") for field in schema["properties"].values())
 
     async def test_seedream_output_schema(self, configured_server: None) -> None:
         server = configured_server

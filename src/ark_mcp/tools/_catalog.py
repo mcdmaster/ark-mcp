@@ -30,10 +30,6 @@ def _modelark(settings: Settings) -> bool:
     return settings.has_modelark
 
 
-def _seed3d(settings: Settings) -> bool:
-    return settings.has_seed3d
-
-
 def _seed_audio(settings: Settings) -> bool:
     return settings.has_seed_audio
 
@@ -44,10 +40,6 @@ def _stt(settings: Settings) -> bool:
 
 def _object_storage(settings: Settings) -> bool:
     return settings.has_object_storage
-
-
-def _vod(settings: Settings) -> bool:
-    return settings.has_vod_mediakit
 
 
 def _omnihuman(settings: Settings) -> bool:
@@ -155,6 +147,13 @@ CATALOG: tuple[CatalogEntry, ...] = (
         gate=_seed_audio,
     ),
     _entry(
+        "seed_tts_generate",
+        "SeedTtsGenerateOutput",
+        "seed:audio:generate",
+        background="required",
+        gate=_seed_audio,
+    ),
+    _entry(
         "media_upload",
         "MediaUploadOutput",
         "media:upload",
@@ -168,48 +167,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "seed:asr:transcribe",
         background="required",
         gate=_stt,
-    ),
-    _entry(
-        "vod_enhance_video",
-        "VodEnhanceVideoOutput",
-        "vod:enhance",
-        background="required",
-        gate=_vod,
-    ),
-    _entry(
-        "vod_transcode_video",
-        "VodTranscodeVideoOutput",
-        "vod:transcode",
-        background="required",
-        gate=_vod,
-    ),
-    _entry(
-        "vod_separate_audio",
-        "VodSeparateAudioOutput",
-        "vod:extract",
-        background="required",
-        gate=_vod,
-    ),
-    _entry(
-        "vod_add_subtitles",
-        "VodAddSubtitlesOutput",
-        "vod:subtitle:add",
-        background="required",
-        gate=_vod,
-    ),
-    _entry(
-        "vod_remove_subtitles",
-        "VodRemoveSubtitlesOutput",
-        "vod:subtitle:remove",
-        background="required",
-        gate=_vod,
-    ),
-    _entry(
-        "vod_get_task",
-        "VodTaskOutput",
-        "vod:read",
-        background="optional",
-        gate=_vod,
     ),
     _entry("ark_asset_group_ensure", "AssetGroupResult", "assets:write", gate=_assets),
     _entry("ark_asset_group_list", "AssetGroupPage", "assets:read", gate=_assets),
@@ -298,20 +255,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "understanding:read",
         background="required",
         gate=_modelark,
-    ),
-    _entry(
-        "hyper3d_create_task",
-        "Seed3DCreateTaskOutput",
-        "hyper3d:create",
-        background="required",
-        gate=_seed3d,
-    ),
-    _entry(
-        "hitem3d_create_task",
-        "Seed3DCreateTaskOutput",
-        "hitem3d:create",
-        background="required",
-        gate=_seed3d,
     ),
 )
 

@@ -123,6 +123,14 @@ class TestEstimateCostUnknown:
         assert cost == 0.0
 
 
+@pytest.mark.parametrize("characters,expected", [(0, 0), (1, 0.00002), (10000, 0.2), (1000000, 20)])
+def test_tts_pricing_uses_character_count_without_cent_rounding(
+    characters: int, expected: float
+) -> None:
+    assert estimate_cost(product="tts", variations=1, characters=characters) == expected
+    assert log_cost_estimate(product="tts", variations=1, characters=characters) == expected
+
+
 class TestCostConstants:
     """Verify cost per unit values are reasonable."""
 
@@ -201,27 +209,6 @@ class TestLogCostEstimate:
                 estimated_cost_usd=0.03,
                 price_source="builtin",
             )
-
-
-class TestEstimateCost3D:
-    """Tests for estimate_cost with 3d product."""
-
-    def test_hyper3d_default(self) -> None:
-        from ark_mcp.tools._cost import COST_PER_3D_TASK_HYPER3D
-
-        assert estimate_cost(product="3d", variations=1) == COST_PER_3D_TASK_HYPER3D
-
-    def test_hitem3d_family(self) -> None:
-        from ark_mcp.tools._cost import COST_PER_3D_TASK_HITEM3D
-
-        cost = estimate_cost(product="3d", variations=2, seed3d_family="seed3d_hitem3d")
-        assert cost == round(2 * COST_PER_3D_TASK_HITEM3D, 2)
-
-    def test_hyper3d_family(self) -> None:
-        from ark_mcp.tools._cost import COST_PER_3D_TASK_HYPER3D
-
-        cost = estimate_cost(product="3d", variations=1, seed3d_family="seed3d_hyper3d")
-        assert cost == COST_PER_3D_TASK_HYPER3D
 
 
 class TestVideoCostByFamily:

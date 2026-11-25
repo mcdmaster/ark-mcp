@@ -1,6 +1,6 @@
 # Models and limits
 
-Model discovery with `ark_list_models`, how the server binds model IDs to families, and the per-family limits for Seedance, Seedream, Seed 3D, and Seed 2.1 understanding. **This file is the one place per-family numbers live.** For the configured server, **`ark_list_models` is authoritative**: bindings are operator-configured, so a deployment can list fewer, more, or differently named models than the tables below. Tool parameters are in the tool schemas (see [API reference](https://byteplus-sa.github.io/ark-mcp/api-reference/)).
+Model discovery with `ark_list_models`, how the server binds model IDs to families, and the per-family limits for Seedance, Seedream, Seed TTS, and Seed 2.1 understanding. **This file is the one place per-family numbers live.** For the configured server, **`ark_list_models` is authoritative**: bindings are operator-configured, so a deployment can list fewer, more, or differently named models than the tables below. Tool parameters are in the tool schemas (see [API reference](https://byteplus-sa.github.io/ark-mcp/api-reference/)).
 
 ## Discovery with `ark_list_models`
 
@@ -13,22 +13,22 @@ Model discovery with `ark_list_models`, how the server binds model IDs to famili
 
 **Call it before any generation or understanding tool.** It is read-only and idempotent, needs no auth scope, and **makes no provider calls**; it reads the server's own configuration.
 
-- **`kind`** (`video`, `image`, `3d`, `understanding`) filters the list; omit it to get every configured kind.
-- **`models[]`** has one entry per configured model whose service is enabled (empty when ModelArk is not configured; `3d` models appear only when 3D is enabled). Each entry carries `model_id`, `family`, `kind`, `is_default`, `tool`, and one limits object (`video`, `image`, `seed3d`, or `understanding`).
+- **`kind`** (`video`, `image`, `audio`, `understanding`) filters the list; omit it to get every configured kind.
+- **`models[]`** has one entry per configured model whose service is enabled (Seed TTS uses the Seed Speech key independently of ModelArk). Each entry carries `model_id`, `family`, `kind`, `is_default`, `tool`, and one limits object (`video`, `image`, `tts`, or `understanding`).
 - **`model_id` is the exact value the `model` argument accepts.** Omitting `model` uses the entry with `is_default: true`.
 - **`tool`** names the tool that serves the model. Understanding modalities and media limits describe this route, not every possible use of the underlying model. `seed_audio_understand` advertises only `audio` (up to eight clips); use `seed_understand` for images/videos. Neither handler accepts mixed audio/visual requests.
-- **`services[]`** reports each optional service with `enabled` and, when disabled, a `reason` naming the env var or flag to set (never a secret). Services: `modelark`, `seed3d`, `seed_audio`, `speech_to_text`, `vod_mediakit`, `omnihuman`, `object_storage`, `asset_library`, `asset_delete`. **Use it to decide whether a capability exists; configuration documentation is not evidence that the running server exposes it.**
+- **`services[]`** reports each optional service with `enabled` and, when disabled, a `reason` naming the env var or flag to set (never a secret). Services: `modelark`, `seed_audio`, `seed_tts`, `speech_to_text`, `omnihuman`, `object_storage`, `asset_library`, `asset_delete`, `moderation`. **Use it to decide whether a capability exists; configuration documentation is not evidence that the running server exposes it.**
 
 | `kind` | `tool` | Notes on `is_default` |
 |---|---|---|
 | `video` | `seedance_create_task` | One default (`SEEDANCE_DEFAULT_MODEL`) |
 | `image` | `seedream_generate_image` | One default (`SEEDREAM_DEFAULT_MODEL`) |
-| `3d` | `hyper3d_create_task` or `hitem3d_create_task` (by family) | One default per family |
+| `audio` | `seed_tts_generate` | Literal `dola-seed-tts-3.0`, no new model setting |
 | `understanding` | `seed_understand`, or `seed_audio_understand` for the `SEED_AUDIO_UNDERSTANDING_MODEL` binding | Two defaults: the non-audio default and the audio model |
 
 ### Exact IDs and typos
 
-`seedance_create_task`, `seedream_generate_image`, `hyper3d_create_task`, `hitem3d_create_task`, and `seed_understand` accept **configured IDs only**. An unknown ID is rejected before any provider call. The error lists the configured IDs and adds a did-you-mean hint when one is close (compared case-insensitively with `.` treated as `-`; no hint when nothing is close):
+`seedance_create_task`, `seedream_generate_image`, and `seed_understand` accept **configured IDs only**. An unknown ID is rejected before any provider call. The error lists the configured IDs and adds a did-you-mean hint when one is close (compared case-insensitively with `.` treated as `-`; no hint when nothing is close):
 
 ```text
 Model '<id>' is not configured. Did you mean '<closest-id>'? Configured video models: [...]. Call ark_list_models(kind='video') for details.
@@ -46,13 +46,12 @@ The server maps each configured model ID to a **family**; the family decides the
 
 | Setting | Effect |
 |---|---|
-| `SEEDREAM_MODEL_BINDINGS`, `SEEDANCE_MODEL_BINDINGS`, `SEED_UNDERSTANDING_MODEL_BINDINGS`, `SEED3D_MODEL_BINDINGS` | JSON list of `{"model_id": "...", "family": "..."}`; required for any custom model or endpoint ID |
+| `SEEDREAM_MODEL_BINDINGS`, `SEEDANCE_MODEL_BINDINGS`, `SEED_UNDERSTANDING_MODEL_BINDINGS` | JSON list of `{"model_id": "...", "family": "..."}`; required for any custom model or endpoint ID |
 | `SEEDREAM_MODEL_FAMILY`, `SEEDANCE_MODEL_FAMILY`, `SEED_UNDERSTANDING_MODEL_FAMILY` | Family for a single custom default model when no bindings are set |
 | `SEEDREAM_DEFAULT_MODEL`, `SEEDANCE_DEFAULT_MODEL`, `SEED_UNDERSTANDING_DEFAULT_MODEL` | Model used when `model` is omitted |
-| `HYPER3D_DEFAULT_MODEL`, `HITEM3D_DEFAULT_MODEL` | Per-family 3D defaults |
 | `SEEDREAM_PROMPT_OPTIMIZATION_MODE` | `standard` (default) or `fast`; applies only to Seedream 5.0 Pro when the caller omits `prompt_optimization` |
 
-Family values: Seedream `seedream_5_5` / `pro` / `lite` / `4x`; Seedance `standard` (2.0) / `fast` / `mini` / `seedance_2_5` / `seedance_2_5_flash`; understanding `pro` / `turbo`; 3D `hyper3d` / `hitem3d`.
+Family values: Seedream `seedream_5_5` / `pro` / `lite` / `4x`; Seedance `standard` (2.0) / `fast` / `mini` / `seedance_2_5` / `seedance_2_5_flash`; understanding `pro` / `turbo`.
 
 ### Built-in model IDs (no binding needed)
 
@@ -65,8 +64,6 @@ Family values: Seedream `seedream_5_5` / `pro` / `lite` / `4x`; Seedance `standa
 | Seedance 2.0 (opt-in) | `dreamina-seedance-2-0-260128` | Standard |
 | Understanding | `dola-seed-2-1-turbo-260628` | Turbo |
 | Understanding (opt-in) | `dola-seed-evolving` | Pro |
-| Hyper3D | `hyper3d-gen2-260112` | Hyper3D |
-| Hitem3d | `hitem3d-2-0-251223` | Hitem3d |
 
 Seedream Lite, Seedream 4.x, Seedance 2.0 Fast, and Seedance 2.0 Mini have no built-in ID; bind the account's authorized ID to the family.
 
@@ -129,16 +126,20 @@ before paid 4K use. See the [contract caveat](https://byteplus-sa.github.io/ark-
 - **5.5 `seed`:** retained as an explicit compatibility field but absent from the current provider parameter docs and OpenAPI schema; omit unless provider acceptance is verified.
 - Discovery reports transparency, named/custom size limits, `background_modes`, `prompt_optimization_modes`, and `supports_safety_identifier`. Source and remaining live-alpha validation: [model capabilities](https://byteplus-sa.github.io/ark-mcp/models/#image-capabilities-imagecapabilities). Layer-decomposition/OCR inputs are rejected.
 
-## Seed 3D (`kind: 3d`, requires `BYTEPLUS_MODELARK_3D_ENABLED=true`)
+## Seed TTS (`kind: audio`)
 
-| Family | Tool | Text-to-3D | Reference images | `file_format` | Seed |
-|---|---|---|---|---|---|
-| Hyper3D | `hyper3d_create_task` | Yes | prompt and/or up to 5 | `glb`, `obj`, `usdz`, `fbx`, `stl` | Yes (0-65535) |
-| Hitem3d | `hitem3d_create_task` | No | 1-4 required | `obj`, `glb`, `stl`, `fbx`, `usdz` | No |
+Service `seed_tts` uses `BYTEPLUS_SEED_SPEECH_API_KEY` and the existing
+`BYTEPLUS_SEED_AUDIO_BASE_URL`. The model is literal `dola-seed-tts-3.0`
+and its limits live in `tts`. This is separate from full-scene Seed Audio
+and the `kind="understanding"` entry for `seed_audio_understand`.
 
-- **Choosing.** Hyper3D for text-to-3D, seeds, PBR materials, mesh modes, or HD textures. Hitem3d for image-to-3D with multi-view inputs and resolution control (`1536` or `1536pro`) and face-count control.
-- 3D tools are absent and `ark_list_models(kind='3d')` is empty when the flag is off; `services` shows `seed3d` with the flag to set.
-- Both families return a task ID polled with `gen_task_get`; the result is a zip package (see [polling-and-artifacts.md](polling-and-artifacts.md)).
+`tts` contains only `max_text_characters=10000`, `max_ssml_characters=10000`
+(local SSML safety cap), `output_formats` (`mp3`, `pcm`, `ogg_opus`) and
+`requires_voice_id=true`. Sample rates and voice controls are input-schema
+rules, not discovery fields. Discovery does not verify provider or voice access.
+
+Full controls, result handling and verification details:
+[tool-reference.md](tool-reference.md#seed-tts-30).
 
 ## Understanding (`kind: understanding`)
 

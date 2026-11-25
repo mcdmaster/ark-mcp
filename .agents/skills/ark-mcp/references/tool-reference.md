@@ -2,15 +2,14 @@
 
 Per-product behaviour of the create tools that the tool schemas do not spell out: flows, cross-field rules, gotchas, and recovery. Parameters, ranges and output fields are in each tool's schema (also [API reference](https://byteplus-sa.github.io/ark-mcp/api-reference/)); per-model limits are in [models-and-limits.md](models-and-limits.md); polling, persistence and artifact handling are in [polling-and-artifacts.md](polling-and-artifacts.md); background-job mechanics are in [workflows.md](workflows.md).
 
-**Universal rules for every create tool below:** run it through `ark_job_submit` (or native task augmentation), read the task IDs from the job result, and poll those IDs. **Never resubmit a create tool to poll or to retry an ambiguous failure: every submit is billed and none is idempotent.** Take exact model IDs from `ark_list_models`; `model` accepts exact IDs only.
+**Universal rules for every create tool below:** run it through `ark_job_submit` (or native task augmentation). Poll provider task IDs only when the job result returns them; Seedream, Seed Audio and Seed TTS return completed artifacts instead. **Never resubmit a create tool to poll or to retry an ambiguous failure: every submit is billed and none is idempotent.** Take exact model IDs from `ark_list_models`; `model` accepts exact IDs only.
 
 - [Variations and dry runs](#variations-and-dry-runs)
 - [Seedance](#seedance)
 - [Seedream](#seedream)
 - [Seed Audio](#seed-audio)
-- [Seed 3D](#seed-3d-hyper3d-and-hitem3d)
+- [Seed TTS 3.0](#seed-tts-30)
 - [OmniHuman](#omnihuman)
-- [VOD AI MediaKit](#vod-ai-mediakit)
 
 ## Variations and dry runs
 
@@ -186,35 +185,60 @@ The following example selects Pro, which must be bound by the operator:
 ## Seed Audio
 
 Needs `BYTEPLUS_SEED_SPEECH_API_KEY`. `seed_audio_generate` produces a full-scene clip (speech, ambience, music, effects) from a text prompt; **run it through `ark_job_submit`**. The provider URL expires after 2 hours, so keep `persist=true` (default).
+For exact text or SSML with a selected `voice_id`, use Seed TTS below.
 
 - **References: one kind only.** `audio_references` (up to 3: `speaker` ID, `url`, or `base64`) steer voice or scene; `image_reference` gives visual context. **Passing both is rejected.**
 - **Base64 reference audio** is checked against the media limit (30 s by default for WAV) and the audio size cap before submission; prefer a URL for longer material.
+- **Generated audio returned as Base64** has no file-size cap in the artifact store. In stdio mode, use `seed_media_export_artifact` to get the saved file path for large outputs.
 - **`asset://` references** are rejected by default and follow `BYTEPLUS_MODELARK_ASSET_REFERENCE_MODE` like Seedream (see above); only Seedance uses them natively.
 - **`text_prompt` is 1-3000 characters**; a line such as `Max duration: 20 seconds` in the prompt is only used for the cost estimate, not enforced.
 - **Subtitles** (`output.subtitle`, `subtitle_type` `utterance` or `word`) are returned on the single-call result only.
 - **Variations:** no seed exists, so variations differ only by sampling. With `variations > 1`, `artifact`, `duration_seconds`, `billing_duration_seconds` and `subtitle` are **null**; everything is in `summary` (`total`, `succeeded`, `failed`, per-variation `artifact` or `error`). `output_path` must then be a directory ending in `/`.
 - `billing_duration_seconds` can differ from the actual `duration_seconds`.
 
-## Seed 3D (Hyper3D and Hitem3d)
+## Seed TTS 3.0
 
-Needs `BYTEPLUS_MODELARK_3D_ENABLED=true` and the ModelArk key. **Check availability first**: if `ark_list_models` reports `seed3d` disabled or the create tools are absent, report 3D unavailable; configuration docs alone prove nothing about the running server.
+`seed_tts_generate` is distinct text-to-speech, using the existing Seed Speech
+key and `BYTEPLUS_SEED_AUDIO_BASE_URL`, with scope `seed:audio:generate`.
+No new environment variable. Model is literal `dola-seed-tts-3.0`; discovery
+uses service `seed_tts`, `kind="audio"` and `tts` limits.
 
-**Choosing:** `hyper3d_create_task` for text-to-3D or image-to-3D (prompt and/or up to 5 images; seed, PBR/Shaded/All/None materials, Raw/Quad meshes, HD textures, T-pose, bounding box). `hitem3d_create_task` for image-to-3D only (1-4 images; resolution, face count, geometry-only versus textured, multi-view bitmap). Both return `task_id` with `status="queued"`; **both are polled, cancelled and deleted with `gen_task_get` / `gen_task_cancel_or_delete`**, same lifecycle as Seedance.
+- **Required background execution:** `ark_job_submit` or native tasks. HTTP
+  JSONL is aggregated in the worker, not streamed as live MCP audio.
+  Read the completed artifact from the job result, not `gen_task_get`.
+- **Required input:** authorized `voice_id` and exactly one `text` or `ssml`.
+  Each is capped at 10,000 characters; the SSML cap is local safety, not a
+  claimed provider limit. Choose a Speaker ID for the target language from
+  the [official voice list](https://docs.byteplus.com/en/docs/byteplusvoice/voicelist-3-0).
+  Voice/session IDs have a local 256-character cap; language codes have 64.
+- **`output_format`:** `format` is `mp3` (default), `pcm` or `ogg_opus`.
+  `sample_rate` defaults to 24000 Hz; Opus requires 48000 Hz. Compressed
+  `bit_rate` defaults to 64000 bits/second and accepts only 64000/160000.
+  Omit it for PCM; MP3 at 8000 Hz accepts only 64000.
+- **`voice_settings`:** `speed`/`volume` 0.5-2.0, integer `pitch` -12 to 12,
+  `instructions` as up to 16 strings of 1-1000 characters (local caps),
+  and boolean `similarity_boost` (default false).
+  `language_code="auto"`, `enable_subtitle=false`, optional `session_id`,
+  `text_normalization=true`, `enable_markdown_filter=false`, and
+  `silence_duration` 0-30,000 milliseconds are separate input fields.
+- **`pronunciation_dictionary`:** optional `{"tone": [...]}` with rules such
+  as `omg/oh my god` or `北京/(bei3)(jing1)`. Local caps are 100 rules of up to
+  1000 characters each.
+- **Mandatory full-output persistence:** no `persist=false`. Optional stdio
+  `output_path`/`overwrite` follows the existing local-write policy and jobs
+  need `OUTPUT_ROOTS`. Do not pass Seed Audio's `output`, references or variations.
+  Check `artifact.persistence_error` for the existing bounded inline fallback;
+  failed storage above its cap is a tool error, not a provider URL to recover.
+- **Result:** `artifact`, resolved `output_format`, `session_id`,
+  `alignments` as `[{text, words: [{word, start_time, end_time}]}]` with
+  word times in **seconds**, and available `request_id`/`provider_log_id`.
+  Never invent a duration or provider URL; alignment endpoints are not full
+  audio duration, and `session_id` is not an idempotency guarantee.
+- **Billing:** published TTS 3.0 rate is USD 20/million characters,
+  including SSML/audio tags.
 
-- A model ID from the other family is rejected with a pointer to the right tool. `model` comes from `ark_list_models(kind='3d')`; omit for the configured default.
-- **Hyper3D:** `prompt` is English, max 400 characters, and required when no images are given. `subdivision_level` is ignored when `quality_override` is set. `quality_override` ranges differ by mesh mode (Raw 500-1M, Quad 1000-200K). `file_format` defaults to `glb`.
-- **Hitem3d:** `multi_images_bit` marks which views are present in front/back/left/right order and may contain only `0` and `1` (`"1010"` = front + left). `file_format` defaults to `obj`; `request_type` 3 (default) is geometry plus texture.
-- Input images accept URLs or Base64; no `asset://`.
-- The finished `model_file` output is a **zip package** whose provider URL lasts about 24 hours; persist it from `gen_task_get` with `persist_output=true` in the background ([polling-and-artifacts.md](polling-and-artifacts.md)).
-
-### 3D delivery contract
-
-**Provider success delivers a generated package, not a Blender-ready or approved asset.** Before handing a result to a DCC workflow:
-
-- Retain the immutable package and record provider family and model, request and reference hashes, the Ark job ID and the provider task ID as separate values, artifact ID, byte size, SHA-256, requested format, material/topology settings, usage, and source URL expiry.
-- Prefer GLB for a first Blender handoff (mesh, hierarchy, materials and textures travel together). Extract into a new bounded directory, reject absolute paths and parent traversal, and never overwrite the provider archive.
-- Import into a quarantine collection, then normalize units, scale, axes, origin, transforms, geometry, normals, UVs, materials, textures and rig readiness. Record the normalized working-copy hash and viewport review separately from the provider package.
-- **A 3D asset supplies structure and appearance, not motion.** It becomes Seedance motion authority only after an animated video render is deliberately selected and bound for a supported video-reference mode. Keep 3D generation, Blender normalization, previz rendering and Seedance generation as distinct operations with their own task IDs, costs, statuses and review evidence.
+See the [Seed TTS 3.0 guide](https://byteplus-sa.github.io/ark-mcp/seed-tts/)
+for a job example, official sources, and verification details.
 
 ## OmniHuman
 
@@ -224,27 +248,3 @@ Needs `BYTEPLUS_OMNIHUMAN_ENABLED=true` and `BYTEPLUS_CV_API_KEY` (a Vision AI k
 - **Sources:** `image` and `audio` are public HTTPS URLs or `seed-media://artifacts/<id>`. Image limits: common formats (jpeg, png, webp, bmp, tiff, gif, heic, heif), under 30 MB, aspect 0.4-2.5, each side 300-6000 px. Audio: wav or mp3, under 15 MB, 4-300 s. **The video length follows the audio.**
 - **`seed-media://` inputs need `ARTIFACT_BACKEND=object_storage`** so the server can presign them (1-hour URL). Otherwise `media_upload` the file and pass the presigned URL. The artifact's media type, MIME type and size are checked and reported as safe errors.
 - `prompt` is optional scene, motion and camera guidance (max 2000 characters; zh, en, ja, ko, es-MX, id). `watermark` defaults to `true`.
-
-## VOD AI MediaKit
-
-Needs `BYTEPLUS_VOD_MEDIAKIT_API_KEY`. Five submit tools (`vod_enhance_video`, `vod_transcode_video`, `vod_add_subtitles`, `vod_remove_subtitles`, `vod_separate_audio`) share one poller, **`vod_get_task`**.
-
-### Submit-then-poll contract
-
-- **Read `task_id` and `operation` from the submit result and pass both to `vod_get_task`.** The echoed `operation` is `enhance`, `transcode`, `add_subtitles`, `remove_subtitles` or `separate_audio`; a task cannot be read with a different `operation`.
-- **Every submit is a non-idempotent, open-world mutation and is never retried automatically.** A timeout or 5xx may mean the provider already started work (ambiguous completion). Do not resubmit blindly.
-- `vod_add_subtitles` and `vod_remove_subtitles` accept a **`client_token`** (1-64 printable ASCII characters): reuse the same token to reconcile an ambiguous submission instead of creating a duplicate. The other three submit tools have no token, so confirm with the user before re-submitting after an ambiguous failure.
-- `vod_get_task` defaults to `persist_output=false` (foreground poll). `persist_output=true` copies finished outputs into the artifact store once per task and requires background execution; provider URLs are preserved in the result even when persistence is skipped or fails. See [polling-and-artifacts.md](polling-and-artifacts.md).
-- Submit results are `status="accepted"` with `recommended_poll_after_ms` (a heuristic).
-
-### Source URL rules
-
-**All sources must be public HTTPS URLs; private and link-local hosts are rejected.** The provider downloads the source asynchronously after submission, so **the URL must stay fetchable until the provider has it**. A presigned URL can expire first (default TTL 1800 s, configurable 60-604800 s via `TOS_PRESIGN_TTL_SECONDS` / `S3_PRESIGN_TTL_SECONDS`) and fail the task. For local files, upload with `media_upload` and `expires_in_seconds` of about 3600, check `failed` and `items[].error`, and pass the item's `url`; or use a stable public URL.
-
-### Per-operation notes
-
-- **`vod_enhance_video`**: tiers `fast` (latency, input up to 2K, output up to 4K), `standard` (balanced; honors `scene`), `professional` (highest quality and cost, the default). `resolution` and `resolution_limit` are mutually exclusive (default `4k`). `scene` applies only to `standard`; `enhance_style` is not supported by `fast`; `fps` above the source interpolates (stay within 4x), `null` keeps the source rate. **The result may be `accepted` (poll it) or `succeeded` directly** with `source_url`; `persistence` (`not_applicable`, `not_requested`, `persisted`, `failed`) reports the best-effort durable copy, which is capped at 200 MiB, so **retain `source_url` even when the copy fails**. `estimated_cost_usd` is always null.
-- **`vod_transcode_video`**: the defaults reproduce a portrait-to-720x720 letterbox profile (h264, CRF 25, `scale_type=2`). Set `video.scale_type`/`scale_mode` explicitly for other targets; width/height apply only with `scale_type=2`, short/long side only with `scale_type=1`. `fps_mode` matters only when `fps` is set; HDR is converted to SDR unless `is_hdr_to_sdr=false`.
-- **`vod_add_subtitles`**: burns an SRT/VTT/ASS file (`subtitle_url`, wins if both are given) or inline cues into the video; at least one is required. Cues need nonblank text, a nonnegative `start_time` and a later `end_time`. Output is an MP4.
-- **`vod_remove_subtitles`**: default `subtitle` mode erases recognized dialogue subtitles; **`text` mode is broader and also erases titles, labels and watermarks**. Normalized rectangles, time segments and OCR thresholds narrow the work. `project` and `model_version` are legacy extensions, omitted by default.
-- **`vod_separate_audio`**: exactly one of `audio_url` or `video_url`. `scene` `Audio` / `Music` yields voice plus background; `Drama` / `Narrate` yields voice, music and sfx. Typically tens of seconds but can take minutes: **keep polling until a terminal state** rather than giving up on the first `processing`. A provider `failed` with `AbilityProcessingError` or `InternalError` has been transient in practice: re-submit the same source before concluding the input is bad. `output_path` for the poller must be a directory ending in `/` (several tracks).

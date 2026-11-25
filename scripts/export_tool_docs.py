@@ -24,7 +24,6 @@ _ENV_ALLOWLIST = ("PATH", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP")
 _REGISTRATION_GATES = {
     "_always": "Always registered; no provider credentials required.",
     "_modelark": "Requires BYTEPLUS_MODELARK_API_KEY.",
-    "_seed3d": "Requires BYTEPLUS_MODELARK_3D_ENABLED=true and BYTEPLUS_MODELARK_API_KEY.",
     "_seed_audio": "Requires BYTEPLUS_SEED_SPEECH_API_KEY.",
     "_stt": "Requires BYTEPLUS_SEED_SPEECH_API_KEY.",
     "_object_storage": (
@@ -32,7 +31,6 @@ _REGISTRATION_GATES = {
         "with TOS_ACCESS_KEY, TOS_SECRET_KEY and TOS_BUCKET; or OBJECT_STORAGE_BACKEND=s3 "
         "with S3_ACCESS_KEY, S3_SECRET_KEY and S3_BUCKET."
     ),
-    "_vod": "Requires BYTEPLUS_VOD_MEDIAKIT_API_KEY.",
     "_omnihuman": "Requires BYTEPLUS_OMNIHUMAN_ENABLED=true and BYTEPLUS_CV_API_KEY.",
     "_assets": "Requires BYTEPLUS_MODELARK_ACCESS_KEY and BYTEPLUS_MODELARK_SECRET_KEY.",
     "_moderation": (

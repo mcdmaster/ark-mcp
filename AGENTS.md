@@ -15,6 +15,18 @@ separate tools. The flow is discovery → create → poll:
   discovery itself makes no provider calls.
 - **Seed Audio** — full-scene audio generation through Seed Speech
   (`seed_audio_generate`, including parallel variations).
+- **Seed TTS 3.0** — distinct text-to-speech through `seed_tts_generate`,
+  literal model `dola-seed-tts-3.0`, required `voice_id` and exactly one
+  `text` or `ssml` (10,000-character bounds; SSML bound is local safety).
+  Reuses `BYTEPLUS_SEED_SPEECH_API_KEY`, `BYTEPLUS_SEED_AUDIO_BASE_URL` and
+  `seed:audio:generate`; requires `ark_job_submit` or native tasks. Aggregates
+  HTTP JSONL into full persisted audio, not live MCP audio streaming; no
+  `persist=false`. Optional `output_path`/`overwrite` is stdio-only. Discovery
+  exposes service `seed_tts`, model kind `audio` and `tts` limits. Returns
+  resolved output format, session/diagnostic IDs and word alignments in seconds,
+  without fabricated duration or provider URL. Supports optional
+  `pronunciation_dictionary.tone` corrections. Voice selection, contract and billing:
+  `docs/seed-tts.md`.
 - **Seedream** — image generation and editing through ModelArk with one
   tool, `seedream_generate_image` (generate, edit with point/bbox,
   transparent background, variations, dry run).
@@ -33,11 +45,8 @@ separate tools. The flow is discovery → create → poll:
   authoritative. Regular 2.5 remains the default. Retained regular 2.5 4K
   acceptance differs from current model-specific provider docs; see
   `docs/models.md` for the contract caveat.
-- **Seed 3D** — asynchronous 3D model generation through ModelArk (Hyper3D
-  text-to-3D and Hitem3d image-to-3D). Gated by `BYTEPLUS_MODELARK_3D_ENABLED`;
-  disabled by default.
 - **Generation tasks** — `gen_task_get`, `gen_task_list` and
-  `gen_task_cancel_or_delete` poll, list and cancel Seedance and 3D tasks
+  `gen_task_cancel_or_delete` poll, list and cancel Seedance tasks
   (scopes `gen:read` / `gen:delete`).
 - **OmniHuman 2.0** — image + audio to talking-avatar video through BytePlus
   Vision AI (`omnihuman_create_task`, `omnihuman_get_task`,
@@ -51,10 +60,6 @@ separate tools. The flow is discovery → create → poll:
   can use the Files API for oversized audio and video soundtracks (up to
   512 MB); uploaded files are deleted best-effort after processing.
 - **Speech-to-Text** — background audio transcription through Seed Speech ASR.
-- **VOD AI MediaKit** — asynchronous video enhancement, video transcoding,
-  subtitle burn-in and precision subtitle/text erasure, and voice/background
-  audio separation through the BytePlus VOD AI MediaKit; every operation is
-  polled with `vod_get_task`.
 - **Object storage upload** — `media_upload` / `media_presign` take lists and
   return presigned URLs for URL-only media workflows (TOS or S3 backend).
 - **Private asset library** — `ark_asset_*` tools for Dreamina Seedance
@@ -70,14 +75,15 @@ separate tools. The flow is discovery → create → poll:
   not granted to shared-key HTTP. Ten lookups per rolling minute per runtime,
   no automatic retries or result persistence; empty/not-found is not approval.
   Eligibility and live-unverified status: `docs/moderation.md` and
-  `specs/SPEC_MODELARK_MODERATION_CONTRACT.md`. The catalog contains 39 tools;
+  `specs/SPEC_MODELARK_MODERATION_CONTRACT.md`. The catalog contains 32 tools;
   `ark_list_models.services` includes configuration-only `moderation`.
 - **Background jobs** — ordinary `ark_job_*` tools are the default route for
   long-running work through the FastMCP worker, since most clients cannot
   negotiate MCP task augmentation; native tasks remain supported for clients
   that can.
 - **Durable artifacts** — MCP resources for generated media whose provider URLs
-  expire (2h for audio, 24h for image/video/3D).
+  expire (2h for Seed Audio, 24h for image/video), plus complete Seed TTS
+  audio aggregated from HTTP JSONL with mandatory persistence.
 - **Transports** — local `stdio` first, with protected Streamable HTTP as a
   deployable option (both natively supported by FastMCP). Hosted HTTP uses only
   `MCP_AUTH_MODE=api_key` with `MCP_API_KEY_SHA256`, never the raw key.
@@ -88,14 +94,13 @@ separate tools. The flow is discovery → create → poll:
   tests, with the tenant claim key fixed to `tenant_id`. See
   `docs/self-hosting.md` for generation and rotation.
 
-Seedance, Seedream, Seed 3D, Seed 2.1 Understanding, and Seed Audio
+Seedance, Seedream, Seed 2.1 Understanding, and Seed Audio
 Understanding share the ModelArk data-plane host and Bearer authentication.
-Seed Audio and Speech-to-Text are
-hosted by Seed Speech and use `X-Api-Key`. VOD AI MediaKit uses a separate
-Bearer key. The asset library and moderation lookup use BytePlus IAM AK/SK with OpenAPI V4
-signatures. The server uses three provider gateways behind one normalized
-domain layer. See `plans/PLAN_ARK_SEED_MULTIMODAL_MCP.md` for the full
-design.
+Seed Audio, Seed TTS and Speech-to-Text are
+hosted by Seed Speech and use `X-Api-Key`. OmniHuman uses a separate Vision AI
+Bearer key. The asset library and moderation lookup use BytePlus IAM AK/SK with
+OpenAPI V4 signatures. The provider gateways share one normalized domain layer.
+See `plans/PLAN_ARK_SEED_MULTIMODAL_MCP.md` for the full design.
 
 ## Repository Layout
 

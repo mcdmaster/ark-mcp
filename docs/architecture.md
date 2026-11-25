@@ -9,14 +9,14 @@ Server as shipped today. For the original design rationale, see
 - **Small, typed tool surface** — a handful of Pydantic-validated tools rather
   than a wide REST API.
 - **Dedicated provider gateways, one domain layer** — Seedance and Seedream
-  share the ModelArk host and Bearer auth; Seed Audio uses a separate host and
-  `X-Api-Key`; VOD AI MediaKit uses its own Bearer-authenticated convenience
-  endpoint for enhancement, transcoding, and audio separation. The differences
-  are hidden behind normalized adapters.
-- **Durable artifacts** — known provider media URLs expire (2h Seed Audio; 24h
-  ModelArk image/video and observed MediaKit outputs), so outputs are persisted
-  to a local store and re-exposed as stable `seed-media://artifacts/{id}` MCP
-  resources. MediaKit persistence is best-effort.
+  share the ModelArk host and Bearer auth. Seed Audio and Seed TTS share a
+  Seed Speech host and `X-Api-Key`. OmniHuman uses the Vision AI host and its
+  own Bearer key. Normalized adapters provide a common tool surface.
+- **Durable artifacts** — known provider media URLs expire (2h Seed Audio, 24h
+  ModelArk image/video, 1h OmniHuman video). Outputs can be persisted to an
+  artifact store and exposed as stable `seed-media://artifacts/{id}` MCP
+  resources. Seed TTS aggregates HTTP JSONL into complete audio with mandatory
+  persistence and no provider URL.
 - **Safe by default** — local `stdio` requires no auth; remote HTTP requires
   shared-key hash verification, Host/Origin protection, and body limits.
 - **Observable and budget-aware** — structured logs, Prometheus metrics, and a
@@ -45,8 +45,7 @@ src/ark_mcp/
 │   ├── base.py            # BaseHttpGateway: spans, metrics, error normalization
 │   ├── retry.py
 │   ├── modelark.py        # Seedream + Seedance
-│   ├── seed_speech.py     # Seed Audio
-│   ├── vod_mediakit/      # VOD AI MediaKit (Bearer; enhancement, transcode, subtitles, separation)
+│   ├── seed_speech/       # Seed Audio + Seed TTS
 │   └── vision_cv/         # Vision AI (Bearer; OmniHuman 2.0 submit/query/cancel)
 ├── runtime.py             # lifespan-owned services (limiter, budget, ownership)
 ├── artifacts/             # durable artifact store (filesystem backend)
@@ -65,8 +64,7 @@ flowchart LR
     Server --> Domain["Domain layer\n(tools/ + domain/)"]
     Domain --> Gateway["Provider gateways\n(providers/)"]
     Gateway -->|"Bearer auth"| ModelArk["ModelArk\nSeedream + Seedance"]
-    Gateway -->|"X-Api-Key"| SeedSpeech["Seed Speech\nSeed Audio"]
-    Gateway -->|"Bearer auth"| MediaKit["VOD AI MediaKit\nenhancement + transcode + subtitles + separation"]
+    Gateway -->|"X-Api-Key"| SeedSpeech["Seed Speech\nSeed Audio + Seed TTS"]
     Gateway -->|"Bearer auth"| VisionCv["Vision AI\nOmniHuman 2.0"]
     Gateway -->|"AK/SK V4 signing"| OpenApi["ModelArk OpenAPI\nassets + moderation lookup"]
     Server -.durable.-> Store["Artifact store\n(filesystem)"]
@@ -76,22 +74,17 @@ flowchart LR
 - **ModelArk gateway** (`providers/modelark.py`) — serves Seedream (image)
   and Seedance (video). Uses `Authorization: Bearer` and base URL
   `https://ark.ap-southeast.bytepluses.com/api/v3`.
-- **Seed Speech gateway** (`providers/seed_speech.py`) — serves Seed Audio.
+- **Seed Speech gateway** (`providers/seed_speech/`) — serves Seed Audio and Seed TTS.
   Uses `X-Api-Key` and base URL `https://voice.ap-southeast-1.bytepluses.com`.
+  `seed_tts_generate` reuses the existing key/base URL and
+  `seed:audio:generate` scope. Its required background job aggregates HTTP
+  JSONL into a full persisted artifact; it is not a live MCP audio stream or
+  a provider task polled through `gen_task_get`. See [Seed TTS 3.0](seed-tts.md).
 - **Vision AI gateway** (`providers/vision_cv/`) — serves the `omnihuman_*` tools
   through the common v3 task API (`submit_task_v2`, `get_result_v2`,
   `cancel_task`). It uses Bearer auth (`BYTEPLUS_CV_API_KEY`), defaults to
   `https://openapi.cv.bytepluses.com`, and treats `code == 10000` in the
   response body as the only success signal.
-- **VOD AI MediaKit gateway** (`providers/vod_mediakit/`) — serves the
-  `vod_enhance_video`, `vod_transcode_video`, `vod_add_subtitles`,
-  `vod_remove_subtitles`, and `vod_separate_audio` submit tools (for example
-  `POST /tools/separate-voice`) and the single `vod_get_task` poller
-  (`GET /tasks/{task_id}`), which dispatches on the `operation` each submit
-  tool returns. It uses Bearer auth
-  and defaults to `https://mediakit.ap-southeast-1.bytepluses.com/api/v1`. Its
-  success schemas are isolated in the adapters; the gateway accepts only known
-  result shapes and rejects unknown shapes.
 - **ModelArk OpenAPI** (`providers/modelark/openapi.py`) — signed AK/SK control
   plane for assets and opt-in `ark_moderation_get`. Moderation is account-wide
   trusted stdio/local-mode loopback only, foreground-only, with one request,
@@ -102,21 +95,11 @@ flowchart LR
   provider metrics, and normalizes transport/HTTP errors into a single
   `ProviderError` carrying a `NormalizedProviderError`.
 
-MediaKit enhancement, transcode, subtitle, and separation submissions are non-idempotent
-mutations and bypass the automatic retry helper: a timeout can be ambiguous after
-the provider has begun work. All operations use the verified task-status
-endpoint (`GET /tasks/{task_id}`), so `vod_get_task` polls it for every
-operation and reuses the shared ownership store and task-artifact cache under the `vod-mediakit` provider
-key. For all surfaces, a completed provider URL is preserved and
-persistence is attempted separately as a best-effort operation (under the
-200 MiB video limit for video, 10 MiB audio limit for separated tracks).
-
 ## Long-running task flow
 
-Generation and variation calls, transcription, uploads, multimodal
-understanding, and Seedance, Seed 3D, and MediaKit submissions are registered
-with `execution.taskSupport="required"` and a two-second recommended poll
-interval. FastMCP's Docket worker runs the existing tool handler after returning
+Seedance and OmniHuman submissions, generation and variation calls,
+transcription, uploads, and multimodal understanding are registered with
+`execution.taskSupport="required"` and a two-second recommended poll interval. FastMCP's Docket worker runs the existing tool handler after returning
 the MCP task ID, while the handler retains the normal provider timeout, budget,
 concurrency, error, and usage accounting paths.
 
@@ -128,7 +111,7 @@ delegates creation, status, and cancellation to the pinned FastMCP task
 backend. It does not introduce a second queue or execute provider work inside
 the foreground request.
 
-Seedance, Seed 3D, and MediaKit get calls use optional task support: foreground
+Seedance and OmniHuman get calls use optional task support: foreground
 execution remains available for short processing-status checks, while task
 augmentation protects the completed-output download and persistence path. List,
 presign, artifact-read, and cancel/delete operations stay foreground.

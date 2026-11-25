@@ -39,7 +39,7 @@ verification is implemented in `src/ark_mcp/security/http_auth.py`.
 flowchart LR
     C["MCP clients"] -->|"HTTPS + shared bearer key"| P["Caddy: TLS on 443"]
     P -->|"HTTP, internal network"| S["ark-mcp: hash verification, fixed scopes, team budget"]
-    S -->|"API keys (server-side only)"| B["BytePlus<br/>ModelArk / Seed Speech / VOD"]
+    S -->|"API keys (server-side only)"| B["BytePlus<br/>ModelArk / Seed Speech / Vision AI"]
     S -->|"internal-only network"| R[("Redis<br/>background jobs")]
     S --- V[("ark-state volume<br/>runtime.sqlite3 + artifacts")]
 ```
@@ -219,14 +219,11 @@ still require their server-side credentials and feature flags.
 |---|---|
 | `seedream:generate` | Image generation, variations, editing |
 | `seedance:create` | Create video tasks with `seedance_create_task` (all generations) |
-| `gen:read` / `gen:delete` | Poll/list or cancel/delete Seedance and 3D tasks |
-| `seed:audio:generate` | Audio generation and variations |
+| `gen:read` / `gen:delete` | Poll/list or cancel/delete Seedance tasks |
+| `seed:audio:generate` | Seed Audio generation/variations and `seed_tts_generate` text-to-speech |
 | `seed:asr:transcribe` | `speech_to_text` |
 | `understanding:read` | `seed_understand`, `seed_audio_understand` |
-| `hyper3d:create` | Hyper3D text-to-3D tasks |
-| `hitem3d:create` | Hitem3D image-to-3D tasks |
 | `omnihuman:create` / `omnihuman:read` / `omnihuman:cancel` | OmniHuman 2.0 image-plus-audio video tasks |
-| `vod:enhance`, `vod:transcode`, `vod:subtitle:add`, `vod:subtitle:remove`, `vod:extract` / `vod:read` | VOD processing / polling |
 | `media:upload` / `media:presign` | Upload reference media and persist provider URLs / mint read URLs |
 | `artifacts:read` | Read and download generated artifacts |
 

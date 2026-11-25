@@ -17,7 +17,7 @@ execution guidance. The tables below help you choose a starting point.
 | --- | --- | --- |
 | Generate or edit images | [seedream_generate_image](/ark-mcp/tool-reference/seedream-generate-image/) | ModelArk key; reference edits, point/bbox edits, variations and `dry_run` |
 | Create video | [seedance_create_task](/ark-mcp/tool-reference/seedance-create-task/) | ModelArk key; select an enabled Seedance model, then poll the provider task |
-| Poll video/3D tasks | [gen_task_get](/ark-mcp/tool-reference/gen-task-get/) | Batch status checks; lightweight calls can skip output persistence |
+| Poll Seedance tasks | [gen_task_get](/ark-mcp/tool-reference/gen-task-get/) | Batch status checks; lightweight calls can skip output persistence |
 | List or cancel/delete tasks | [gen_task_list](/ark-mcp/tool-reference/gen-task-list/), [gen_task_cancel_or_delete](/ark-mcp/tool-reference/gen-task-cancel-or-delete/) | Owned-task lifecycle; cancellation/deletion has provider-specific semantics |
 
 [Seedream 5.5](/ark-mcp/tool-reference/seedream-generate-image/#seedream-5-5) is the built-in image default
@@ -40,7 +40,14 @@ available in Ark MCP.
 | Task | Tool | Credential |
 | --- | --- | --- |
 | Generate full-scene audio | [seed_audio_generate](/ark-mcp/tool-reference/seed-audio-generate/) | Seed Speech key |
+| Generate speech from text or SSML | [seed_tts_generate](tools.md#seed_tts_generate) | Same Seed Speech key; required `voice_id` |
 | Transcribe speech | [speech_to_text](/ark-mcp/tool-reference/speech-to-text/) | Seed Speech key |
+
+Seed TTS 3.0 uses `dola-seed-tts-3.0` and is distinct from full-scene Seed Audio.
+It requires background execution and always persists the full audio aggregated
+from HTTP JSONL; it is not a live MCP audio stream. Discover it through service
+`seed_tts` and `ark_list_models(kind="audio")`. See [Seed TTS 3.0](seed-tts.md)
+for inputs, formats, billing and verification limits.
 
 ## Understanding
 
@@ -53,18 +60,6 @@ Seed Audio Understanding is not the Seed Speech ASR service. It uses a
 server-configured ModelArk model; do not pass an audio clip to `seed_understand`.
 Understanding and transcription are provider operations, not free setup tests.
 
-<span id="3d-and-avatars"></span>
-
-## 3D
-
-| Task | Tool | Requirements |
-| --- | --- | --- |
-| Text/image to 3D | [hyper3d_create_task](/ark-mcp/tool-reference/hyper3d-create-task/) | ModelArk key and `BYTEPLUS_MODELARK_3D_ENABLED=true` |
-| Image to 3D | [hitem3d_create_task](/ark-mcp/tool-reference/hitem3d-create-task/) | Same 3D gate |
-
-3D results use the shared `gen_task_*` lifecycle. The 3D feature is disabled
-by default.
-
 ## Avatars
 
 | Task | Tool | Requirements |
@@ -73,23 +68,6 @@ by default.
 | Poll/cancel avatars | [omnihuman_get_task](/ark-mcp/tool-reference/omnihuman-get-task/), [omnihuman_cancel_task](/ark-mcp/tool-reference/omnihuman-cancel-task/) | Vision AI credentials and gate |
 
 OmniHuman has its own poller and cancel tool. Avatars are disabled by default.
-
-## Media Processing
-
-VOD AI MediaKit has a separate Bearer key,
-`BYTEPLUS_VOD_MEDIAKIT_API_KEY`. Submit its operations in the background and
-poll with `vod_get_task`, preserving the returned `operation`.
-
-| Task | Tool |
-| --- | --- |
-| Enhance/upscale video | [vod_enhance_video](/ark-mcp/tool-reference/vod-enhance-video/) |
-| Change codec, container, resolution or bitrate | [vod_transcode_video](/ark-mcp/tool-reference/vod-transcode-video/) |
-| Burn subtitles | [vod_add_subtitles](/ark-mcp/tool-reference/vod-add-subtitles/) |
-| Erase subtitles/on-screen text | [vod_remove_subtitles](/ark-mcp/tool-reference/vod-remove-subtitles/) |
-| Separate voice and background audio | [vod_separate_audio](/ark-mcp/tool-reference/vod-separate-audio/) |
-| Retrieve MediaKit task status/results | [vod_get_task](/ark-mcp/tool-reference/vod-get-task/) |
-
-Do not use ModelArk `gen_task_get` to poll a VOD task.
 
 ## Uploads and Outputs
 

@@ -3,18 +3,20 @@
 > **Historical migration guide:** this page records the 0.1.x to 0.2.0
 > transition, including the JWT scopes used at that time. It is not current
 > authentication setup advice. Current hosted HTTP accepts only a shared MCP
-> key; see [breaking-change migration](self-hosting.md#breaking-change-migration).
+> key. See [breaking-change migration](self-hosting.md#breaking-change-migration).
+> The current `gen_task_*` tools serve Seedance video tasks exclusively. Consult
+> the [tool catalog](api-reference.md#tool-inventory) for current capabilities.
 
 **0.2.0 consolidates the tool surface.** One tool per product capability
 replaces the per-model, per-variation and per-operation tools of 0.1.x. With
-every service enabled, `tools/list` now returns **38 tools**. **There is no
+every service enabled, `tools/list` returned **38 tools** in 0.2.0. **There is no
 compatibility layer**: clients, prompts, skills and dashboards that name a
 removed tool must switch to its replacement.
 
 ```mermaid
 flowchart LR
-  D["ark_list_models<br/>what can I use?"] --> C["create<br/>seedance_create_task<br/>seedream_generate_image<br/>seed_audio_generate<br/>vod_* / hyper3d / hitem3d"]
-  C --> P["poll<br/>gen_task_get / gen_task_list<br/>vod_get_task"]
+  D["ark_list_models<br/>what can I use?"] --> C["create<br/>seedance_create_task<br/>seedream_generate_image<br/>seed_audio_generate"]
+  C --> P["poll<br/>gen_task_get / gen_task_list"]
   P --> A["artifacts<br/>seed_media_*"]
 ```
 
@@ -58,17 +60,6 @@ flowchart LR
   Regular 2.5 remains the default. See
   [Flash configuration](configuration.md#seedance-25-flash).
 
-### 3D
-
-| 0.1.x tool | 0.2.0 replacement |
-|---|---|
-| `hyper3d_get_task`, `hitem3d_get_task` | `gen_task_get` |
-| `hyper3d_list_tasks`, `hitem3d_list_tasks` | `gen_task_list` |
-| `hyper3d_cancel_or_delete_task`, `hitem3d_cancel_or_delete_task` | `gen_task_cancel_or_delete` |
-
-The create tools `hyper3d_create_task` and `hitem3d_create_task` are
-unchanged.
-
 ### Seedream (images)
 
 | 0.1.x tool | 0.2.0 replacement |
@@ -91,18 +82,6 @@ unchanged.
 With `variations > 1`, `artifact`, `duration_seconds` and
 `billing_duration_seconds` are null and `summary` carries the per-variation
 results.
-
-### VOD AI MediaKit
-
-| 0.1.x tool | 0.2.0 replacement |
-|---|---|
-| `vod_get_enhancement_task` | `vod_get_task` with `operation="enhance"` |
-| `vod_get_transcode_task` | `vod_get_task` with `operation="transcode"` |
-| `vod_get_audio_separation` | `vod_get_task` with `operation="separate_audio"` |
-| `vod_get_subtitle_addition_task` | `vod_get_task` with `operation="add_subtitles"` |
-| `vod_get_subtitle_removal_task` | `vod_get_task` with `operation="remove_subtitles"` |
-
-Every `vod_*` create tool echoes the `operation` value to pass back.
 
 ### Object storage
 
@@ -137,8 +116,8 @@ This section is historical: the current server rejects `jwt` mode.
 
 | Removed | Replacement |
 |---|---|
-| `seedance:read`, `hyper3d:read`, `hitem3d:read` | `gen:read` |
-| `seedance:delete`, `hyper3d:delete`, `hitem3d:delete` | `gen:delete` |
+| `seedance:read` | `gen:read` |
+| `seedance:delete` | `gen:delete` |
 
 **Until the identity provider grants `gen:read` and `gen:delete`, those
 principals cannot poll or cancel tasks.** Ownership checks are unchanged: a

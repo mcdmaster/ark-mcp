@@ -56,19 +56,6 @@ _ALLOWED_VIDEO_MIMES: frozenset[str] = frozenset(
     }
 )
 
-_ALLOWED_3D_MIMES: frozenset[str] = frozenset(
-    {
-        "application/zip",
-        "application/x-zip-compressed",
-        "model/gltf-binary",
-        "model/gltf+json",
-        "application/octet-stream",
-        "binary/octet-stream",
-        "model/vnd.usdz+zip",
-        "text/plain",
-    }
-)
-
 
 class MediaLimits(BaseModel):
     """Size limits (in bytes) for each media type."""
@@ -77,12 +64,10 @@ class MediaLimits(BaseModel):
     audio_max_seconds: int = 30
     image_max_bytes: int = 10 * 1024 * 1024  # 10 MB
     video_max_bytes: int = 200 * 1024 * 1024  # 200 MB
-    three_d_max_bytes: int = 200 * 1024 * 1024  # 200 MB
 
     ALLOWED_AUDIO_MIMES: ClassVar[frozenset[str]] = _ALLOWED_AUDIO_MIMES
     ALLOWED_IMAGE_MIMES: ClassVar[frozenset[str]] = _ALLOWED_IMAGE_MIMES
     ALLOWED_VIDEO_MIMES: ClassVar[frozenset[str]] = _ALLOWED_VIDEO_MIMES
-    ALLOWED_3D_MIMES: ClassVar[frozenset[str]] = _ALLOWED_3D_MIMES
 
 
 def get_media_limits() -> MediaLimits:
@@ -124,17 +109,6 @@ def validate_video_mime(mime_type: str | None) -> None:
         )
 
 
-def validate_3d_mime(mime_type: str | None) -> None:
-    """Validate that the MIME type is an allowed 3D model/archive format."""
-    if mime_type is None:
-        return
-    normalized = mime_type.lower().split(";")[0].strip()
-    if normalized not in _ALLOWED_3D_MIMES:
-        raise MediaValidationError(
-            f"3D MIME type '{mime_type}' is not allowed. Allowed: {sorted(_ALLOWED_3D_MIMES)}"
-        )
-
-
 def check_base64_size(data: str, max_bytes: int, *, label: str = "media") -> int:
     """Check the decoded size of Base64 data without fully decoding.
 
@@ -152,12 +126,13 @@ def check_base64_size(data: str, max_bytes: int, *, label: str = "media") -> int
     return estimated
 
 
-def decode_base64_safely(data: str, max_bytes: int, *, label: str = "media") -> bytes:
-    """Decode Base64 data with size limit enforcement.
+def decode_base64_safely(data: str, max_bytes: int | None, *, label: str = "media") -> bytes:
+    """Decode strict Base64, enforcing a byte cap when provided.
 
-    Raises MediaValidationError if the decoded size exceeds max_bytes.
+    Raises MediaValidationError for invalid Base64 or when the decoded size exceeds the cap.
     """
-    check_base64_size(data, max_bytes, label=label)
+    if max_bytes is not None:
+        check_base64_size(data, max_bytes, label=label)
     try:
         return base64.b64decode(data, validate=True)
     except Exception as exc:

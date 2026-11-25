@@ -21,7 +21,6 @@ class MediaType(StrEnum):
     IMAGE = "image"
     AUDIO = "audio"
     VIDEO = "video"
-    THREE_D = "three_d"
 
 
 class ArtifactPersistenceIssue(BaseModel):
@@ -37,7 +36,7 @@ class ArtifactPersistenceIssue(BaseModel):
     ] = Field(description="Failure category.")
     message: str = Field(description="Safe failure message (no credentials or URLs).")
     retryable: bool = Field(description="Whether retrying persistence later may succeed.")
-    artifact_limit_bytes: int = Field(description="Maximum durable artifact size in bytes.")
+    artifact_limit_bytes: int | None = Field(description="Source byte cap. Null for inline audio.")
     source_url_expires_at: str | None = Field(
         default=None,
         description="ISO-8601 expiry of the unpersisted provider URL (the artifact uri).",
@@ -49,7 +48,7 @@ class ArtifactRef(BaseModel):
 
     id: str = Field(..., description="Unique artifact identifier.")
     uri: str = Field(..., description="MCP resource URI (seed-media://artifacts/{id}).")
-    media_type: MediaType = Field(..., description="image, audio, video or three_d.")
+    media_type: MediaType = Field(..., description="image, audio, or video.")
     mime_type: str = Field(..., description="MIME type, e.g. image/png.")
     bytes: int | None = Field(default=None, description="Size in bytes.")
     sha256: str | None = Field(default=None, description="SHA-256 hex digest.")

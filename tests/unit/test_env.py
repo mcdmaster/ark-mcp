@@ -14,9 +14,6 @@ class TestSettings:
         settings = Settings()
         assert settings.modelark_base_url == "https://ark.ap-southeast.bytepluses.com/api/v3"
         assert settings.seed_audio_base_url == "https://voice.ap-southeast-1.bytepluses.com"
-        assert settings.vod_mediakit_base_url == (
-            "https://mediakit.ap-southeast-1.bytepluses.com/api/v1"
-        )
         assert settings.mcp_transport == "stdio"
         assert settings.mcp_host == "127.0.0.1"
         assert settings.mcp_port == 3000
@@ -43,43 +40,6 @@ class TestSettings:
     def test_has_seed_audio_true_when_set(self) -> None:
         settings = Settings(_env_file=None, BYTEPLUS_SEED_SPEECH_API_KEY="sk-test")
         assert settings.has_seed_audio
-
-    def test_has_vod_mediakit_reflects_key(self) -> None:
-        assert not Settings(_env_file=None).has_vod_mediakit
-        configured = Settings(
-            _env_file=None,
-            BYTEPLUS_VOD_MEDIAKIT_API_KEY="test-mediakit-key",  # pragma: allowlist secret
-        )
-        assert configured.has_vod_mediakit
-
-    def test_seed3d_disabled_by_default(self) -> None:
-        settings = Settings(_env_file=None, BYTEPLUS_MODELARK_API_KEY="sk-test")
-        assert not settings.seed3d_enabled
-        assert not settings.has_seed3d
-
-    def test_seed3d_requires_both_flag_and_key(self) -> None:
-        assert not Settings(_env_file=None, BYTEPLUS_MODELARK_3D_ENABLED=True).has_seed3d
-        assert Settings(
-            _env_file=None,
-            BYTEPLUS_MODELARK_API_KEY="sk-test",  # pragma: allowlist secret
-            BYTEPLUS_MODELARK_3D_ENABLED=True,
-        ).has_seed3d
-
-    def test_seed3d_bindings_built_from_defaults(self) -> None:
-        settings = Settings(_env_file=None)
-        ids = [binding.model_id for binding in settings.seed3d_model_bindings]
-        assert settings.hyper3d_default_model in ids
-        assert settings.hitem3d_default_model in ids
-
-    def test_seed3d_duplicate_bindings_rejected(self) -> None:
-        with pytest.raises(ValueError, match="duplicate IDs"):
-            Settings(
-                _env_file=None,
-                SEED3D_MODEL_BINDINGS=[
-                    {"model_id": "m1", "family": "hyper3d"},
-                    {"model_id": "m1", "family": "hitem3d"},
-                ],
-            )
 
     def test_removed_premium_settings_do_not_add_bindings(self) -> None:
         settings = Settings(
@@ -183,18 +143,6 @@ class TestSettings:
         assert settings.cv_base_url == "https://cv.example.com"
         with pytest.raises(ValueError, match="BYTEPLUS_CV_BASE_URL must use HTTPS"):
             Settings(_env_file=None, BYTEPLUS_CV_BASE_URL="http://cv.example.com")
-
-    def test_vod_mediakit_base_url_override_requires_https(self) -> None:
-        settings = Settings(
-            _env_file=None,
-            BYTEPLUS_VOD_MEDIAKIT_BASE_URL="https://mediakit.example.com/api/v1",
-        )
-        assert settings.vod_mediakit_base_url == "https://mediakit.example.com/api/v1"
-        with pytest.raises(ValueError, match="BYTEPLUS_VOD_MEDIAKIT_BASE_URL must use HTTPS"):
-            Settings(
-                _env_file=None,
-                BYTEPLUS_VOD_MEDIAKIT_BASE_URL="http://mediakit.example.com/api/v1",
-            )
 
     def test_allowed_origins_empty(self) -> None:
         settings = Settings(_env_file=None)

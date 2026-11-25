@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import base64
+import json
 import uuid
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -187,6 +187,53 @@ class TestFilesystemArtifactStore:
         with pytest.raises(FileNotFoundError):
             await store.get(ref.id)
 
+    @pytest.mark.parametrize("schema_version", [1, 2])
+    async def test_delete_expired_removes_storage_for_retired_media(
+        self, store: FilesystemArtifactStore, schema_version: int
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        expired = await store.put_base64("eA==", media_type="image", mime_type="image/png")
+        available = await store.put_base64("eQ==", media_type="image", mime_type="image/png")
+        location = await store.locate(expired.id)
+        assert location.path is not None
+        retired_path = location.path.rename(location.path.with_suffix(".obsolete"))
+        unrelated = retired_path.with_name(f"{expired.id}-unrelated.txt")
+        unrelated.write_text("keep")
+        meta_path = location.path.with_suffix(".meta.json")
+        payload = json.loads(meta_path.read_text())
+        payload["ref"].update(
+            media_type="retired", expires_at=(now - timedelta(seconds=1)).isoformat()
+        )
+        meta_path.write_text(json.dumps(payload if schema_version == 2 else payload["ref"]))
+
+        assert await store.delete_expired(now=now) == 1
+        assert not retired_path.exists()
+        assert not meta_path.exists()
+        assert unrelated.read_text() == "keep"
+        assert (await store.get(available.id)).data == b"y"
+
+    async def test_delete_expired_skips_sidecar_that_names_a_different_artifact(
+        self, store: FilesystemArtifactStore
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        mismatched = await store.put_base64("eA==", media_type="image", mime_type="image/png")
+        available = await store.put_base64("eQ==", media_type="image", mime_type="image/png")
+        location = await store.locate(mismatched.id)
+        assert location.path is not None
+        meta_path = location.path.with_suffix(".meta.json")
+        payload = json.loads(meta_path.read_text())
+        now = datetime.now(UTC)
+        payload["ref"].update(id=available.id, expires_at=(now - timedelta(seconds=1)).isoformat())
+        meta_path.write_text(json.dumps(payload))
+
+        assert await store.delete_expired(now=now) == 0
+        assert location.path.is_file()
+        assert meta_path.is_file()
+        assert (await store.get(available.id)).data == b"y"
+
 
 @pytest.mark.parametrize(
     ("hostname", "expected"),
@@ -196,8 +243,6 @@ class TestFilesystemArtifactStore:
         ("bytepluses.com", False),
         ("bytepluses.com.attacker.example", False),
         ("notbytepluses.com", False),
-        ("3002771874-amk-3000006864-default-934334.vod.ap-southeast-1.byteplusvod.com", True),
-        ("evil.byteplusvod.com.attacker.example", False),
         ("v16m-default.tiktokcdn.com", False),
     ],
 )
@@ -303,37 +348,22 @@ async def test_copy_translates_invalid_mime(tmp_path: Path) -> None:
     assert exc_info.value.retryable is False
 
 
-async def test_copy_preserves_artifact_size_ceiling(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_copy_rejects_audio_url_above_ten_mib(tmp_path: Path) -> None:
+    url = "https://media.bytepluses.com/output.wav"
     downloader = StubDownloader(
         result=DownloadedMedia(
-            body=b"1234567",
-            content_type="video/mp4",
-            final_url="https://media.bytepluses.com/output.mp4",
+            body=b"\x00" * (10 * 1024 * 1024 + 1),
+            content_type="audio/wav",
+            final_url=url,
         )
     )
     store = FilesystemArtifactStore(
         artifact_dir=str(tmp_path),
         downloader=downloader,  # type: ignore[arg-type]
     )
-    monkeypatch.setattr(
-        "ark_mcp.artifacts.filesystem_store.get_media_limits",
-        lambda: SimpleNamespace(
-            image_max_bytes=4,
-            audio_max_bytes=4,
-            video_max_bytes=6,
-            three_d_max_bytes=6,
-        ),
-    )
     try:
         with pytest.raises(ArtifactPersistenceError) as exc_info:
-            await store.copy_from_trusted_url(
-                "https://media.bytepluses.com/output.mp4",
-                media_type="video",
-                mime_type="video/mp4",
-            )
+            await store.copy_from_trusted_url(url, media_type="audio", mime_type="audio/wav")
     finally:
         await store.close()
 

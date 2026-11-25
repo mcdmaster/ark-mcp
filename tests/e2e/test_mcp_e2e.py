@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -48,8 +50,7 @@ ARK_BASE = "https://ark.test.example.com/api/v3"
 def e2e_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setenv("BYTEPLUS_MODELARK_API_KEY", "sk-test-modelark")
     monkeypatch.setenv("BYTEPLUS_SEED_SPEECH_API_KEY", "sk-test-speech")
-    monkeypatch.setenv("BYTEPLUS_VOD_MEDIAKIT_API_KEY", "test-mediakit-key")
-    monkeypatch.setenv("BYTEPLUS_MODELARK_3D_ENABLED", "false")
+    monkeypatch.setenv("BYTEPLUS_OMNIHUMAN_ENABLED", "false")
     monkeypatch.setenv("TOS_ACCESS_KEY", "ak-test-tos")
     monkeypatch.setenv("TOS_SECRET_KEY", "sk-test-tos")
     monkeypatch.setenv("TOS_BUCKET", "test-bucket")
@@ -156,6 +157,7 @@ class TestToolDiscovery:
                 "ark_job_get",
                 "ark_job_submit",
                 "seed_audio_generate",
+                "seed_tts_generate",
                 "seed_media_export_artifact",
                 "seed_media_get_artifact",
                 "seed_media_persist_url",
@@ -169,12 +171,6 @@ class TestToolDiscovery:
                 "speech_to_text",
                 "media_upload",
                 "media_presign",
-                "vod_enhance_video",
-                "vod_transcode_video",
-                "vod_separate_audio",
-                "vod_add_subtitles",
-                "vod_remove_subtitles",
-                "vod_get_task",
             }
 
     async def test_tool_has_input_schema(self, e2e_server: object) -> None:
@@ -280,9 +276,12 @@ class TestBackgroundJobCompatibility:
 
         targets = {target["tool_name"]: target for target in result.structured_content["targets"]}
         assert targets["seed_understand"]["task_mode"] == "required"
+        assert targets["seed_tts_generate"]["task_mode"] == "required"
+        assert targets["seed_tts_generate"]["required_scope"] == "seed:audio:generate"
         assert targets["gen_task_get"]["task_mode"] == "optional"
         assert "input" in targets["seed_understand"]["input_schema"]["properties"]
-        assert "hyper3d_create_task" not in targets
+        assert "input" in targets["seed_tts_generate"]["input_schema"]["properties"]
+        assert "omnihuman_create_task" not in targets
 
     @pytest.mark.parametrize("tool_name", ["gen_task_list", "ark_job_submit"])
     async def test_legacy_client_rejects_non_background_target(
@@ -333,14 +332,19 @@ class TestBackgroundJobCompatibility:
                     "ark_job_submit",
                     {
                         "input": {
-                            "tool_name": "hyper3d_create_task",
-                            "arguments": {"input": {"image_url": "https://example.com/a.png"}},
+                            "tool_name": "omnihuman_create_task",
+                            "arguments": {
+                                "input": {
+                                    "image": "https://example.com/avatar.png",
+                                    "audio": "https://example.com/voice.wav",
+                                }
+                            },
                         }
                     },
                 )
 
         submission_metric.assert_called_once_with(
-            target="hyper3d_create_task",
+            target="omnihuman_create_task",
             status="rejected",
             path="compatibility",
         )
@@ -794,6 +798,45 @@ class TestHealthResourceE2E:
 
 class TestSeedAudioE2E:
     """Verify Seed Audio executes through the MCP protocol surface."""
+
+    async def test_background_job_exports_large_wav_without_provider_url(
+        self, e2e_server: object
+    ) -> None:
+        mcp: FastMCP = e2e_server.mcp  # type: ignore[attr-defined]
+        wav_size = 20 * 1024 * 1024 + 768 * 1024
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as writer:
+            writer.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
+            writer.writeframes(b"\x00" * (wav_size - 44))
+        wav = buffer.getvalue()
+
+        with respx.mock:
+            route = respx.post("https://voice.test.example.com/api/v3/tts/create").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"code": 0, "audio": base64.b64encode(wav).decode("ascii")},
+                )
+            )
+            async with _foreground_client(mcp) as client:
+                _, result = await _call_compatibility_tool(
+                    client,
+                    "seed_audio_generate",
+                    {"input": {"text_prompt": "Test generated speech"}},
+                )
+                assert result["is_error"] is False
+                ref = result["structured_content"]["artifact"]
+                assert ref["bytes"] == wav_size
+                exported = await client.call_tool(
+                    "seed_media_export_artifact", {"input": {"artifact_id": ref["id"]}}
+                )
+            assert route.call_count == 1
+
+        path = Path(exported.structured_content["path"])
+        assert path.suffix == ".wav"
+        assert path.read_bytes() == wav
+        with wave.open(str(path), "rb") as reader:
+            assert reader.getframerate() == 48000
+            assert reader.getnframes() == (wav_size - 44) // 4
 
     async def test_generates_and_persists_audio(
         self, e2e_server: object, monkeypatch: pytest.MonkeyPatch

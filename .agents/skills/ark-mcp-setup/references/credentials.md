@@ -38,16 +38,15 @@ requested products. This is a template, not a populated credential file:
 ```dotenv
 BYTEPLUS_MODELARK_API_KEY=
 BYTEPLUS_SEED_SPEECH_API_KEY=
-BYTEPLUS_VOD_MEDIAKIT_API_KEY=
 BYTEPLUS_CV_API_KEY=
 ```
 
 Omit unneeded fields. ModelArk covers image/video and understanding;
-Seed Speech covers generation and transcription; VOD and Vision AI have
-separate keys. OmniHuman also needs an explicitly requested
-`BYTEPLUS_OMNIHUMAN_ENABLED=true`. Derive any additional storage or asset
+Seed Speech covers generation and transcription. Vision AI uses its own key.
+OmniHuman also needs an explicitly requested `BYTEPLUS_OMNIHUMAN_ENABLED=true`.
+Derive any additional storage or asset
 credential names from the selected release's `.env.example` and docs.
-Never enable Premium, 3D, asset deletion, or AK/SK-backed services just because
+Never enable Premium, asset deletion, or AK/SK-backed services just because
 those settings exist.
 
 Do not copy the entire example blindly: it may pin model IDs or enable
